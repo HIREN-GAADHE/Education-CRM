@@ -1,0 +1,5 @@
+Connected to database
+Current pincode length: 20
+Executed ALTER TABLE command
+New pincode length: 20
+SUCCESS!

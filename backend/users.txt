@@ -1,0 +1,49 @@
+====================================
+    EduERP Test Users by Role
+====================================
+
+Role Levels:
+  0 = Super Admin (Platform Owner)
+  1 = University Admin (Institution Owner)
+  2 = Admin (Department Admin)
+  3 = Staff (Teacher/Accountant)
+  4 = User (Student/Parent)
+
+------------------------------------
+TEST USER CREDENTIALS
+------------------------------------
+
+1. SUPER ADMIN (Role Level: 0)
+   Email:    superadmin@eduerp.com
+   Password: SuperAdmin@123
+   Access:   Full platform access, all tenants
+
+2. UNIVERSITY ADMIN (Role Level: 1)
+   Email:    universityadmin@eduerp.com
+   Password: UniAdmin@123
+   Access:   Full tenant access
+
+3. ADMIN (Role Level: 2)
+   Email:    admin@eduerp.com
+   Password: Admin@123
+   Access:   Department level access
+
+4. STAFF (Role Level: 3)
+   Email:    staff@eduerp.com
+   Password: Staff@123
+   Access:   Teaching/operational access
+
+5. USER (Role Level: 4)
+   Email:    user@eduerp.com
+   Password: User@123
+   Access:   Read-only student/parent access
+
+------------------------------------
+NOTES
+------------------------------------
+- Run the seed script to create these users:
+  python scripts/seed_test_users.py
+  
+- All passwords meet strength requirements:
+  - Minimum 8 characters
+  - Uppercase, lowercase, number, special char

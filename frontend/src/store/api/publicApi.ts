@@ -13,8 +13,8 @@ export const publicApiSlice = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
         getPublicTenantInfo: builder.query<PublicTenantInfo, { slug?: string; domain?: string }>({
             query: (params) => {
-                if (params.domain) return `/tenants/public-info?domain=${params.domain}`;
-                return `/tenants/public-info?slug=${params.slug}`;
+                if (params.domain) return `/api/v1/tenants/public-info?domain=${params.domain}`;
+                return `/api/v1/tenants/public-info?slug=${params.slug}`;
             },
             providesTags: ['PublicTenant' as any],
         }),

@@ -18,17 +18,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Routes that don't require authentication
     PUBLIC_PATHS = [
+        r"^/health$",  # Root level health check
+        r"^/favicon\.ico$",
         r"^/api/v1/auth/login$",
         r"^/api/v1/auth/register$",
         r"^/api/v1/auth/forgot-password$",
         r"^/api/v1/auth/reset-password$",
         r"^/api/v1/auth/verify-email$",
+        r"^/api/v1/auth/refresh$",
         r"^/api/v1/health$",
         r"^/api/v1/health/.*$",
         r"^/docs$",
         r"^/redoc$",
         r"^/openapi.json$",
         r"^/api/v1/tenants/check-slug$",
+        r"^/api/v1/tenants/public-info$",
         r"^/api/v1/tenants/.*/logo$",
         r"^/static/.*$",
     ]

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    LOG_LEVEL: str = "INFO"
     
     # API
     API_V1_PREFIX: str = "/api/v1"

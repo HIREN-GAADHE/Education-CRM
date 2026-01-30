@@ -39,9 +39,6 @@ httpx==0.26.0
 tenacity==8.2.3
 orjson==3.9.10
 
-## PDF Generation
-reportlab==4.0.8
-weasyprint==60.1
 
 ## QR Code
 qrcode==7.4.2

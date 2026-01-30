@@ -57,16 +57,23 @@ def create_application() -> FastAPI:
     
     # Add CORS middleware
     # Note: When allow_credentials=True, allow_origins cannot be ["*"]
-    # For development/demo, we allow localhost and all ngrok-free.dev subdomains
-    cors_origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ] if settings.DEBUG else settings.CORS_ORIGINS
-    
-    # Allow any ngrok-free.dev or other domains for Whitelabeling support
-    # In production, this allows any domain to hit the API, which is needed because
-    # we don't know the tenant domains in advance without a DB lookup.
-    cors_origin_regex = r"https?://.*" if settings.DEBUG else r"https?://.*"
+    # We use allow_origin_regex instead to support wildcard origins
+    if settings.DEBUG:
+        cors_origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+        cors_origin_regex = None
+    else:
+        # In production, check if wildcard is set
+        if settings.CORS_ORIGINS == ["*"]:
+            cors_origins = []
+            cors_origin_regex = r"https?://.*"  # Allow all origins
+        else:
+            cors_origins = settings.CORS_ORIGINS
+            cors_origin_regex = None
     
     app.add_middleware(
         CORSMiddleware,

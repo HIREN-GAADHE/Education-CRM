@@ -9,7 +9,7 @@ export const academicApi = apiSlice.injectEndpoints({
         }),
         getClass: builder.query<SchoolClass, string>({
             query: (id) => `/academic/classes/${id}`,
-            providesTags: (result, error, id) => [{ type: 'Academic', id }],
+            providesTags: (_result, _error, id) => [{ type: 'Academic', id }],
         }),
         createClass: builder.mutation<SchoolClass, Partial<SchoolClass>>({
             query: (data) => ({

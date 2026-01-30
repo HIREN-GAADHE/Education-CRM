@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    Box, Typography, Card, CardContent, Tabs, Tab, Divider, Switch, FormControlLabel,
+    Box, Typography, Card, CardContent, Tabs, Tab, Divider, Switch,
     Grid, Select, MenuItem, FormControl, InputLabel, Button, Alert, Snackbar,
-    CircularProgress, TextField, Slider, Avatar, IconButton, Tooltip, Chip,
-    Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemIcon,
-    ListItemText, LinearProgress
+    CircularProgress, TextField, Slider, Avatar, Tooltip, Chip,
+    Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectTheme, setTheme, setPrimaryColor, setSidebarCollapsed, setInstitutionDetails } from '@/store/slices/uiSlice';
@@ -21,10 +20,8 @@ import {
     CloudDownload as CloudDownloadIcon,
     RestartAlt as ResetIcon,
     PhotoCamera as CameraIcon,
-    CheckCircle as CheckIcon,
     Download as DownloadIcon,
-    Storage as StorageIcon,
-    Info as InfoIcon
+    Storage as StorageIcon
 } from '@mui/icons-material';
 import {
     useGetSettingsQuery,
@@ -61,7 +58,6 @@ const SettingsPage: React.FC = () => {
 
     // Dialogs
     const [resetDialogOpen, setResetDialogOpen] = useState(false);
-    const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
     // Local state for form
     const [localSettings, setLocalSettings] = useState<SettingsUpdateRequest>({});
@@ -132,7 +128,7 @@ const SettingsPage: React.FC = () => {
                 }
 
                 // Sync sidebar collapsed state
-                if (localSettings.appearance.sidebar_collapsed !== undefined) {
+                if (localSettings.appearance.sidebar_collapsed !== undefined && localSettings.appearance.sidebar_collapsed !== null) {
                     dispatch(setSidebarCollapsed(localSettings.appearance.sidebar_collapsed));
                 }
             }
@@ -252,7 +248,6 @@ const SettingsPage: React.FC = () => {
 
             toast.dismiss(loadingToast);
             toast.success(`${type} exported successfully!`);
-            setExportDialogOpen(false);
         } catch (err) {
             toast.dismiss(loadingToast);
             toast.error(`Failed to export ${type} data`);

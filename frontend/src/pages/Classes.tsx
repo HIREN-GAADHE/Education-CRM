@@ -30,7 +30,7 @@ const ClassesPage: React.FC = () => {
 
     const [createClass, { isLoading: isCreating }] = useCreateClassMutation();
     const [updateClass, { isLoading: isUpdating }] = useUpdateClassMutation();
-    const [deleteClass, { isLoading: isDeleting }] = useDeleteClassMutation();
+    const [deleteClass] = useDeleteClassMutation();
 
     const teachers = staffData?.items || [];
 

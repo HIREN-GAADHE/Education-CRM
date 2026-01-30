@@ -39,6 +39,7 @@ export interface Student {
     alternate_phone?: string;
     address_line2?: string;
     country?: string;
+    parent_email?: string;
     father_occupation?: string;
     mother_occupation?: string;
     guardian_name?: string;
@@ -205,7 +206,7 @@ export const studentApi = apiSlice.injectEndpoints({
                         // Return blob for successful responses
                         return response.blob();
                     },
-                }, _api, _extraOptions);
+                });
 
                 if (result.error) {
                     return { error: result.error };

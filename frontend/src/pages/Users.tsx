@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    Box, Typography, Card, CardContent, Avatar, Chip, Button, IconButton,
+    Box, Typography, Card, Avatar, Chip, Button, IconButton,
     TextField, InputAdornment, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Alert, MenuItem, Select, FormControl, InputLabel, Pagination
@@ -8,7 +8,6 @@ import {
 import {
     Search as SearchIcon,
     Add as AddIcon,
-    FilterList as FilterIcon,
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,

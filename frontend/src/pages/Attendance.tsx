@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Card, CardContent, Grid, Avatar, Chip,
     TextField, Button, CircularProgress, Alert, Table, TableBody, TableCell, TableContainer,
-    TableHead, TableRow, FormControl, InputLabel, Select, MenuItem, Paper, Snackbar
+    TableHead, TableRow, FormControl, InputLabel, Select, MenuItem, Snackbar
 } from '@mui/material';
 import {
     Save as SaveIcon,
@@ -114,7 +114,7 @@ const AttendancePage: React.FC = () => {
 
             setSnackbar({
                 open: true,
-                message: `Attendance saved! Created: ${result.created || 0}, Updated: ${result.updated || 0}`,
+                message: result.message || `Attendance saved! ${result.count} records processed`,
                 severity: 'success'
             });
             refetchAttendance();

@@ -56,7 +56,6 @@ const MainLayout: React.FC = () => {
                 {/* Header */}
                 <Header
                     onToggleSidebar={handleToggleSidebar}
-                    sidebarCollapsed={sidebarCollapsed}
                 />
 
                 {/* Page content */}

@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     Box, Typography, Card, CardContent, Grid, Avatar, Chip, Button,
     IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    CircularProgress, Alert, Checkbox, FormControlLabel, FormGroup, Divider,
-    Tooltip
+    CircularProgress, Alert, Checkbox, FormControlLabel, Divider,
 } from '@mui/material';
 import {
     Security as SecurityIcon,
@@ -11,7 +10,6 @@ import {
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,
-    CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import {
     useGetRolesQuery,

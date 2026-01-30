@@ -19,7 +19,6 @@ import {
     ListItemText,
     Divider,
     Button,
-    IconButton,
     Stack,
 } from '@mui/material';
 import {
@@ -38,9 +37,7 @@ import {
     Assessment as AssessmentIcon,
     EventNote as EventNoteIcon,
     ArrowForward as ArrowForwardIcon,
-    MoreHoriz as MoreIcon,
     CheckCircle as CheckCircleIcon,
-    Warning as WarningIcon,
 } from '@mui/icons-material';
 import { selectUser } from '@/store/slices/authSlice';
 import { useGetDashboardDataQuery } from '@/store/api/dashboardApi';
@@ -640,7 +637,7 @@ const DashboardPage: React.FC = () => {
                                 </Button>
                             </Box>
                             <Grid container spacing={2}>
-                                {(isLoading ? [1, 2, 3, 4] : attendance).map((dept, index) => (
+                                {(isLoading ? [1, 2, 3, 4] : attendance).map((dept, _index) => (
                                     <Grid item xs={12} sm={6} md={3} key={typeof dept === 'number' ? dept : dept.label}>
                                         {isLoading ? (
                                             <Skeleton variant="rounded" height={80} />

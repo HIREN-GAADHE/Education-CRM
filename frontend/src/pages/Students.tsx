@@ -4,13 +4,12 @@ import {
     TextField, InputAdornment, Button, Dialog, DialogTitle, DialogContent,
     DialogActions, CircularProgress, Alert, Pagination, Stepper, Step, StepLabel,
     FormControl, InputLabel, Select, MenuItem, Divider, Table, TableBody,
-    TableCell, TableHead, TableRow, Paper, FormLabel, RadioGroup, FormControlLabel, Radio,
+    TableCell, TableHead, TableRow, Paper,
     Menu
 } from '@mui/material';
 import {
     Search as SearchIcon,
     Add as AddIcon,
-    FilterList as FilterIcon,
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,
@@ -129,7 +128,7 @@ const StudentsPage: React.FC = () => {
     });
     const [createStudent, { isLoading: isCreating }] = useCreateStudentMutation();
     const [updateStudent, { isLoading: isUpdating }] = useUpdateStudentMutation();
-    const [deleteStudent, { isLoading: isDeleting }] = useDeleteStudentMutation();
+    const [deleteStudent] = useDeleteStudentMutation();
     const [createFee] = useCreateFeePaymentMutation();
     const [deleteFee] = useDeleteFeePaymentMutation();
     const [importStudents, { isLoading: isImporting }] = useImportStudentsMutation();

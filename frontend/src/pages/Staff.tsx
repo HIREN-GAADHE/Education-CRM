@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
 import {
-    Box, Typography, Card, CardContent, Grid, Avatar, Chip, IconButton,
+    Box, Typography, Card, Grid, Avatar, Chip, IconButton,
     TextField, InputAdornment, Button, Dialog, DialogTitle, DialogContent,
     DialogActions, CircularProgress, Alert, Table, TableBody, Pagination,
     TableCell, TableContainer, TableHead, TableRow, FormControl, InputLabel,
-    Select, MenuItem, Paper, OutlinedInput, Checkbox, ListItemText
+    Select, MenuItem, OutlinedInput, Checkbox, ListItemText
 } from '@mui/material';
 import {
     Search as SearchIcon,
     Add as AddIcon,
-    FilterList as FilterIcon,
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,
-    Person as PersonIcon,
 } from '@mui/icons-material';
 import {
     useGetStaffQuery,

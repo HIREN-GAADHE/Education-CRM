@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     Box, Typography, Paper, Grid, Button, Card, CardContent,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, Chip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogActions, TextField, FormControl, InputLabel, Select, MenuItem,
     LinearProgress, Avatar, Alert, CircularProgress, Skeleton, Snackbar,
-    TablePagination, Tooltip, Divider
+    TablePagination, Tooltip
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -16,8 +16,7 @@ import {
     Visibility as ViewIcon,
     Download as DownloadIcon,
     Delete as DeleteIcon,
-    Publish as PublishIcon,
-    Close as CloseIcon
+    Publish as PublishIcon
 } from '@mui/icons-material';
 import {
     useGetExaminationsQuery,
@@ -28,7 +27,6 @@ import {
     usePublishResultsMutation,
     useGetExamResultsQuery,
     useGetExamStatisticsQuery,
-    useEnterResultMutation,
     useBulkEnterResultsMutation,
     Examination,
     ExamResultCreate,
@@ -66,7 +64,7 @@ const ExaminationsPage: React.FC = () => {
     const [tabValue, setTabValue] = useState(0);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
-    const [resultsDialogOpen, setResultsDialogOpen] = useState(false);
+    const [_resultsDialogOpen, setResultsDialogOpen] = useState(false);
     const [enterResultsDialogOpen, setEnterResultsDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
@@ -95,11 +93,22 @@ const ExaminationsPage: React.FC = () => {
     const [updateExamination, { isLoading: updating }] = useUpdateExaminationMutation();
     const [deleteExamination, { isLoading: deleting }] = useDeleteExaminationMutation();
     const [publishResults, { isLoading: publishing }] = usePublishResultsMutation();
-    const [enterResult] = useEnterResultMutation();
     const [bulkEnterResults, { isLoading: enteringBulk }] = useBulkEnterResultsMutation();
 
     // Form state for create/edit exam
-    const [examForm, setExamForm] = useState({
+    const [examForm, setExamForm] = useState<{
+        name: string;
+        exam_type: 'unit_test' | 'midterm' | 'final' | 'practical' | 'assignment' | 'quiz' | 'oral' | 'internal' | 'project';
+        subject_name: string;
+        class_name: string;
+        section: string;
+        exam_date: string;
+        max_marks: number;
+        passing_marks: number;
+        duration_minutes: number;
+        academic_year: string;
+        instructions: string;
+    }>({
         name: '',
         exam_type: 'unit_test',
         subject_name: '',
@@ -673,7 +682,7 @@ const ExaminationsPage: React.FC = () => {
                                 <Select
                                     label="Type"
                                     value={examForm.exam_type}
-                                    onChange={(e) => setExamForm({ ...examForm, exam_type: e.target.value })}
+                                    onChange={(e) => setExamForm({ ...examForm, exam_type: e.target.value as typeof examForm.exam_type })}
                                 >
                                     {EXAM_TYPES.map(t => (
                                         <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>
@@ -795,7 +804,7 @@ const ExaminationsPage: React.FC = () => {
                                 <Select
                                     label="Type"
                                     value={examForm.exam_type}
-                                    onChange={(e) => setExamForm({ ...examForm, exam_type: e.target.value })}
+                                    onChange={(e) => setExamForm({ ...examForm, exam_type: e.target.value as typeof examForm.exam_type })}
                                 >
                                     {EXAM_TYPES.map(t => (
                                         <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>

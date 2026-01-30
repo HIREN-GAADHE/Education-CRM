@@ -71,7 +71,6 @@ const LoginPage: React.FC = () => {
                             created_at: new Date().toISOString(),
                         },
                         accessToken: result.access_token,
-                        refreshToken: result.refresh_token,
                         roles: result.user.roles,
                         permissions: [], // Will be loaded from API
                         roleLevel: result.user.role_level ?? 99,

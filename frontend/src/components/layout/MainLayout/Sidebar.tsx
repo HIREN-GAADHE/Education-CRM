@@ -28,7 +28,6 @@ import {
     Badge as StaffIcon,
     CalendarMonth as CalendarIcon,
     Chat as CommunicationIcon,
-    Hexagon as LogoIcon,
     Schedule as TimetableIcon,
     Quiz as ExamIcon,
     CreditCard as OnlinePaymentsIcon,

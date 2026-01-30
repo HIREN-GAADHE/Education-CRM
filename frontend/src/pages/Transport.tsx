@@ -5,7 +5,7 @@ import {
     Tabs, Tab, Chip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogActions, TextField, FormControl, InputLabel, Select, MenuItem,
     Alert, CircularProgress, List, ListItem, ListItemText,
-    ListItemIcon, Divider, Snackbar, Autocomplete
+    ListItemIcon, Divider, Snackbar
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -30,7 +30,6 @@ import {
     useRemoveAssignmentMutation,
     useGetTransportStatsQuery,
     Vehicle,
-    TransportRoute,
 } from '../store/api/transportApi';
 import { useGetStudentsQuery } from '../store/api/studentApi';
 
@@ -62,7 +61,7 @@ const TransportPage: React.FC = () => {
     const { data: routesData, isLoading: routesLoading } = useGetRoutesQuery({ page: 1, pageSize: 50 });
     const { data: assignmentsData, isLoading: assignmentsLoading } = useGetAssignmentsQuery({ page: 1, pageSize: 50 });
     const { data: stats } = useGetTransportStatsQuery();
-    const { data: studentsData } = useGetStudentsQuery({ page: 1, page_size: 100 });
+    const { data: studentsData } = useGetStudentsQuery({ page: 1, pageSize: 100 });
 
     // Mutations
     const [createVehicle, { isLoading: creatingVehicle }] = useCreateVehicleMutation();
@@ -214,7 +213,7 @@ const TransportPage: React.FC = () => {
         }
     };
 
-    const getVehicleTypeIcon = (type: string) => {
+    const getVehicleTypeIcon = (_type: string) => {
         return <BusIcon />;
     };
 

@@ -7,13 +7,11 @@ import {
 } from '@mui/material';
 import {
     Person as PersonIcon,
-    School as SchoolIcon,
     EventNote as AttendanceIcon,
     Grade as GradeIcon,
     Payment as PaymentIcon,
     Schedule as TimetableIcon,
-    CheckCircle as CheckIcon,
-    Warning as WarningIcon
+    CheckCircle as CheckIcon
 } from '@mui/icons-material';
 import {
     useGetChildrenQuery,
@@ -201,13 +199,13 @@ const ParentDashboard: React.FC = () => {
                                 <Skeleton variant="text" width={80} />
                             ) : (
                                 <>
-                                    <Typography variant="h4" fontWeight="bold" color={attendance?.percentage >= 75 ? 'success.main' : 'error.main'}>
+                                    <Typography variant="h4" fontWeight="bold" color={(attendance?.percentage ?? 0) >= 75 ? 'success.main' : 'error.main'}>
                                         {attendance?.percentage?.toFixed(0) || 0}%
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
                                         value={attendance?.percentage || 0}
-                                        color={attendance?.percentage >= 75 ? 'success' : 'error'}
+                                        color={(attendance?.percentage ?? 0) >= 75 ? 'success' : 'error'}
                                         sx={{ mt: 1, height: 6, borderRadius: 3 }}
                                     />
                                 </>

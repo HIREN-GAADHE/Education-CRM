@@ -10,22 +10,19 @@ import {
     ListItemText,
     Typography,
     Divider,
-    Avatar,
     Tooltip,
-    useTheme,
 } from '@mui/material';
 import {
     Dashboard as DashboardIcon,
     Business as TenantIcon,
-    CloudQueue as GlobalIcon,
     Settings as SettingsIcon,
     AdminPanelSettings as SuperAdminIcon,
     Security as SecurityIcon,
     Logout as LogoutIcon,
     Analytics as AnalyticsIcon
 } from '@mui/icons-material';
-import { useSelector, useDispatch } from 'react-redux';
-import { selectUser, logout } from '@/store/slices/authSlice';
+import { useDispatch } from 'react-redux';
+import { logout } from '@/store/slices/authSlice';
 import { useLogoutMutation } from '@/store/api/authApi';
 
 interface SidebarProps {
@@ -47,8 +44,6 @@ const SuperAdminSidebar: React.FC<SidebarProps> = ({
 }) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const user = useSelector(selectUser);
-    const theme = useTheme();
     const dispatch = useDispatch();
     const [logoutApi] = useLogoutMutation();
 
@@ -63,7 +58,7 @@ const SuperAdminSidebar: React.FC<SidebarProps> = ({
 
     const handleLogout = async () => {
         try {
-            await logoutApi({}).unwrap();
+            await logoutApi().unwrap();
         } catch (error) {
             console.error('Logout failed', error);
         } finally {

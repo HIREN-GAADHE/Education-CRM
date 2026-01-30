@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import {
-    Box, Typography, Card, CardContent, Grid, Chip, IconButton,
+    Box, Typography, Card, CardContent, Chip, IconButton,
     Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem,
-    Paper, List, ListItem, ListItemText, Divider
+    CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem, List, ListItem, ListItemText, Divider
 } from '@mui/material';
 import {
     Add as AddIcon,
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,
-    Event as EventIcon,
     ChevronLeft as ChevronLeftIcon,
     ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
@@ -28,7 +26,6 @@ const CalendarPage: React.FC = () => {
     const [openDialog, setOpenDialog] = useState(false);
     const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
     const [formData, setFormData] = useState({
         title: '',

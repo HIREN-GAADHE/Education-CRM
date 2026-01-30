@@ -50,10 +50,9 @@ import {
 
 interface HeaderProps {
     onToggleSidebar: () => void;
-    sidebarCollapsed: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onToggleSidebar, sidebarCollapsed }) => {
+const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     const navigate = useNavigate();
     const dispatch = useDispatch();
     const user = useSelector(selectUser);

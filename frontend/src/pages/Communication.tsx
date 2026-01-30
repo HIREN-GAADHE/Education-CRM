@@ -5,7 +5,7 @@ import {
     CircularProgress, Alert, List, ListItem, ListItemText, ListItemAvatar,
     Avatar, Divider, Tabs, Tab, InputAdornment, FormControl, InputLabel,
     Select, MenuItem, CardContent, Checkbox, FormControlLabel, FormGroup,
-    Switch, Autocomplete, Paper
+    Switch, Paper
 } from '@mui/material';
 import {
     Send as SendIcon,
@@ -23,7 +23,6 @@ import {
     Sms as SmsIcon,
     Campaign as AnnouncementIcon,
     Notifications as NotifIcon,
-    Group as GroupIcon,
     School as SchoolIcon,
     People as PeopleIcon,
 } from '@mui/icons-material';
@@ -93,7 +92,7 @@ const CommunicationPage: React.FC = () => {
     const [updateMessage] = useUpdateMessageMutation();
     const [deleteMessage, { isLoading: isDeleting }] = useDeleteMessageMutation();
     const [getRecipientCount, { isLoading: isCountingRecipients }] = useGetRecipientCountMutation();
-    const [sendBulkMessages, { isLoading: isSendingBulk }] = useSendBulkMessagesMutation();
+    const [sendBulkMessages] = useSendBulkMessagesMutation();
     const { data: classesData } = useGetClassesQuery();
 
     // Class-wise filtering state

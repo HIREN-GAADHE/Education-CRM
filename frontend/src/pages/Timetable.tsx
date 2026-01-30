@@ -53,7 +53,6 @@ function TabPanel(props: TabPanelProps) {
     );
 }
 
-const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const TimetablePage: React.FC = () => {
     const [tabValue, setTabValue] = useState(0);
@@ -84,9 +83,9 @@ const TimetablePage: React.FC = () => {
     const [createEntry, { isLoading: creatingEntry }] = useCreateTimetableEntryMutation();
     const [updateEntry, { isLoading: updatingEntry }] = useUpdateTimetableEntryMutation();
     const [createTimeSlot, { isLoading: creatingSlot }] = useCreateTimeSlotMutation();
-    const [updateTimeSlot, { isLoading: updatingSlot }] = useUpdateTimeSlotMutation();
+    const [updateTimeSlot] = useUpdateTimeSlotMutation();
     const [createRoom, { isLoading: creatingRoom }] = useCreateRoomMutation();
-    const [updateRoom, { isLoading: updatingRoom }] = useUpdateRoomMutation();
+    const [updateRoom] = useUpdateRoomMutation();
     const [deleteEntry] = useDeleteTimetableEntryMutation();
     const [deleteTimeSlot] = useDeleteTimeSlotMutation();
     const [deleteRoom] = useDeleteRoomMutation();
@@ -277,17 +276,6 @@ const TimetablePage: React.FC = () => {
             setRoomForm({ name: '', code: '', capacity: 40, room_type: 'classroom', building: '' });
         } catch (error: any) {
             setSnackbar({ open: true, message: error.data?.detail || 'Failed to save room', severity: 'error' });
-        }
-    };
-
-    const handleDeleteEntry = async (id: string) => {
-        if (confirm('Are you sure you want to delete this entry?')) {
-            try {
-                await deleteEntry(id).unwrap();
-                setSnackbar({ open: true, message: 'Entry deleted', severity: 'success' });
-            } catch (error: any) {
-                setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete', severity: 'error' });
-            }
         }
     };
 

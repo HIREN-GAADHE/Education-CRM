@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Card, CardContent, Grid, Avatar, Button, TextField, Divider,
-    Switch, FormControlLabel, CircularProgress, Alert, Snackbar
+    Switch, FormControlLabel, CircularProgress
 } from '@mui/material';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectUser, setUser } from '@/store/slices/authSlice';
 import { useUpdateProfileMutation, useUserChangePasswordMutation } from '@/store/api/userApi';
 import { Person as PersonIcon, CameraAlt as CameraIcon, Save as SaveIcon, Lock as LockIcon } from '@mui/icons-material';
 import { toast } from 'react-toastify';
+import { UserStatus } from '@/types';
 
 const ProfilePage: React.FC = () => {
     const user = useSelector(selectUser);
@@ -46,8 +47,12 @@ const ProfilePage: React.FC = () => {
     const handleSaveProfile = async () => {
         try {
             const result = await updateProfile(profileForm).unwrap();
-            // Update the auth state with new user data
-            dispatch(setUser(result));
+            // Update the auth state with new user data - ensure full_name is present
+            dispatch(setUser({
+                ...result,
+                full_name: `${result.first_name} ${result.last_name || ''}`.trim(),
+                status: result.status as UserStatus,
+            }));
             toast.success('Profile updated successfully!');
         } catch (err: any) {
             toast.error(err?.data?.detail || 'Failed to update profile');

@@ -6,7 +6,7 @@ import {
     TableHead, TableRow, FormControl, InputLabel, Select, MenuItem,
     Pagination, Paper, Tabs, Tab, Avatar, Stack, Skeleton, Tooltip,
     useTheme, Accordion, AccordionSummary, AccordionDetails, Checkbox,
-    FormControlLabel, FormGroup, Divider
+    FormControlLabel, FormGroup
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -650,7 +650,7 @@ const ReportsPage: React.FC = () => {
                                         </AccordionSummary>
                                         <AccordionDetails>
                                             <FormGroup row>
-                                                {entityData.fields.map((field) => (
+                                                {entityData.fields.map((field: { key: string; label: string; type: string }) => (
                                                     <FormControlLabel
                                                         key={field.key}
                                                         control={

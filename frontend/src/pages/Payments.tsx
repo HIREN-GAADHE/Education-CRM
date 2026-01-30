@@ -42,14 +42,21 @@ const PaymentsPage: React.FC = () => {
     const [tabValue, setTabValue] = useState(0);
     const [configDialogOpen, setConfigDialogOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>('all');
-    const [page, setPage] = useState(1);
+    const [page] = useState(1);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
     // Gateway config form state
-    const [gatewayForm, setGatewayForm] = useState({
-        gateway: 'razorpay',
-        api_key_id: '',
-        api_key_secret: '',
+    const [gatewayForm, setGatewayForm] = useState<{
+        gateway: 'razorpay' | 'stripe' | 'paytm' | 'phonepe' | 'offline';
+        api_key: string;
+        api_secret: string;
+        webhook_secret: string;
+        is_test_mode: boolean;
+        is_active: boolean;
+    }>({
+        gateway: 'razorpay' as 'razorpay',
+        api_key: '',
+        api_secret: '',
         webhook_secret: '',
         is_test_mode: true,
         is_active: true,
@@ -107,24 +114,23 @@ const PaymentsPage: React.FC = () => {
     };
 
     const handleSaveGatewayConfig = async () => {
-        if (!gatewayForm.api_key_id || !gatewayForm.api_key_secret) {
+        if (!gatewayForm.api_key || !gatewayForm.api_secret) {
             setSnackbar({ open: true, message: 'Please enter API Key and Secret', severity: 'error' });
             return;
         }
         try {
             await createGatewayConfig({
                 gateway: gatewayForm.gateway,
-                api_key_id: gatewayForm.api_key_id,
-                api_key_secret: gatewayForm.api_key_secret,
-                webhook_secret: gatewayForm.webhook_secret || undefined,
+                api_key: gatewayForm.api_key,
+                api_secret: gatewayForm.api_secret,
                 is_test_mode: gatewayForm.is_test_mode,
                 is_active: gatewayForm.is_active,
             }).unwrap();
             setConfigDialogOpen(false);
             setGatewayForm({
                 gateway: 'razorpay',
-                api_key_id: '',
-                api_key_secret: '',
+                api_key: '',
+                api_secret: '',
                 webhook_secret: '',
                 is_test_mode: true,
                 is_active: true,
@@ -362,7 +368,7 @@ const PaymentsPage: React.FC = () => {
                                 <Select
                                     label="Gateway"
                                     value={gatewayForm.gateway}
-                                    onChange={(e) => setGatewayForm({ ...gatewayForm, gateway: e.target.value })}
+                                    onChange={(e) => setGatewayForm({ ...gatewayForm, gateway: e.target.value as typeof gatewayForm.gateway })}
                                 >
                                     <MenuItem value="razorpay">Razorpay</MenuItem>
                                     <MenuItem value="stripe">Stripe</MenuItem>
@@ -375,8 +381,8 @@ const PaymentsPage: React.FC = () => {
                                 fullWidth
                                 label="API Key ID"
                                 placeholder="Enter API key..."
-                                value={gatewayForm.api_key_id}
-                                onChange={(e) => setGatewayForm({ ...gatewayForm, api_key_id: e.target.value })}
+                                value={gatewayForm.api_key}
+                                onChange={(e) => setGatewayForm({ ...gatewayForm, api_key: e.target.value })}
                             />
                         </Grid>
                         <Grid item xs={12}>
@@ -385,8 +391,8 @@ const PaymentsPage: React.FC = () => {
                                 type="password"
                                 label="API Key Secret"
                                 placeholder="Enter secret key"
-                                value={gatewayForm.api_key_secret}
-                                onChange={(e) => setGatewayForm({ ...gatewayForm, api_key_secret: e.target.value })}
+                                value={gatewayForm.api_secret}
+                                onChange={(e) => setGatewayForm({ ...gatewayForm, api_secret: e.target.value })}
                             />
                         </Grid>
                         <Grid item xs={12}>

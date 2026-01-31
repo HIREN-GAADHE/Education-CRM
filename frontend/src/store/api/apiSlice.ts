@@ -44,7 +44,8 @@ const baseQueryWithReauth = async (args: any, api: any, extraOptions: any) => {
 
     if (result.error && result.error.status === 401) {
         // Try to refresh the token using HttpOnly cookie
-        const refreshResult = await baseQuery(
+        // Use publicBaseQuery to avoid sending the expired Access Token in Authorization header
+        const refreshResult = await publicBaseQuery(
             {
                 url: '/auth/refresh',
                 method: 'POST',

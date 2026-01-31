@@ -143,10 +143,44 @@ async def create_student(
     except Exception as e:
         logger.error(f"Error creating student: {e}")
         await db.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail="An error occurred while creating the student"  # Don't leak internal errors
-        )
+        
+        # Parse database errors to provide helpful messages
+        error_str = str(e).lower()
+        detail = "An error occurred while creating the student"
+        
+        if "stringdataright" in error_str or "value too long" in error_str:
+            # Extract field info from error if possible
+            if "blood_group" in error_str:
+                detail = "Blood group value is too long (max 10 characters)"
+            elif "section" in error_str:
+                detail = "Section value is too long (max 20 characters)"
+            elif "phone" in error_str:
+                detail = "Phone number is too long (max 20 characters)"
+            elif "pincode" in error_str:
+                detail = "Pincode is too long (max 20 characters)"
+            elif "admission_number" in error_str:
+                detail = "Admission number is too long (max 50 characters)"
+            elif "roll_number" in error_str:
+                detail = "Roll number is too long (max 50 characters)"
+            elif "category" in error_str:
+                detail = "Category value is too long (max 50 characters)"
+            else:
+                detail = "One or more field values are too long. Please check your input."
+        elif "unique" in error_str or "duplicate" in error_str:
+            detail = "A student with this information already exists"
+        elif "foreign key" in error_str:
+            detail = "Invalid reference to another record (class, course, etc.)"
+        elif "not null" in error_str:
+            detail = "A required field is missing"
+        elif "invalid input" in error_str or "enum" in error_str:
+            if "gender" in error_str:
+                detail = "Invalid gender value. Use 'male', 'female', or 'other'"
+            elif "status" in error_str:
+                detail = "Invalid status value"
+            else:
+                detail = "Invalid value for one of the fields"
+        
+        raise HTTPException(status_code=400, detail=detail)
 
 
 @router.get("/template")

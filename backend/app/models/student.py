@@ -51,7 +51,7 @@ class Student(TenantBaseModel, SoftDeleteMixin):
     last_name = Column(String(100), nullable=False)
     date_of_birth = Column(Date, nullable=True)
     gender = Column(Enum(Gender), nullable=True)
-    blood_group = Column(String(10), nullable=True)
+    blood_group = Column(String(20), nullable=True)
     nationality = Column(String(50), default="Indian")
     religion = Column(String(50), nullable=True)
     caste = Column(String(50), nullable=True)
@@ -85,7 +85,7 @@ class Student(TenantBaseModel, SoftDeleteMixin):
     course = Column(String(100), nullable=True)  # Will be FK to courses table later
     department = Column(String(100), nullable=True)
     batch = Column(String(50), nullable=True)  # e.g., "2023-2027"
-    section = Column(String(20), nullable=True)
+    section = Column(String(50), nullable=True)
     semester = Column(Integer, nullable=True)
     year = Column(Integer, nullable=True)  # Current year of study
     

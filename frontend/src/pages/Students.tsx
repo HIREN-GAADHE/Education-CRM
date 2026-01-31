@@ -4,8 +4,8 @@ import {
     TextField, InputAdornment, Button, Dialog, DialogTitle, DialogContent,
     DialogActions, CircularProgress, Alert, Pagination, Stepper, Step, StepLabel,
     FormControl, InputLabel, Select, MenuItem, Divider, Table, TableBody,
-    TableCell, TableHead, TableRow, Paper,
-    Menu
+    TableCell, TableHead, TableRow, Paper, TableContainer, ToggleButton, ToggleButtonGroup,
+    Menu, Tooltip
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -18,6 +18,9 @@ import {
     Download as DownloadIcon,
     FileDownload as FileDownloadIcon,
     CloudUpload as CloudUploadIcon,
+    ViewList as ViewListIcon,
+    ViewModule as ViewModuleIcon,
+    MoreVert as MoreVertIcon,
 } from '@mui/icons-material';
 import {
     useGetStudentsQuery,
@@ -101,10 +104,16 @@ const StudentsPage: React.FC = () => {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
     const [classFilter, setClassFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [openDialog, setOpenDialog] = useState(false);
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
     const [activeStep, setActiveStep] = useState(0);
+
+    // Status change menu state
+    const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null);
+    const [statusChangeStudent, setStatusChangeStudent] = useState<Student | null>(null);
 
     // Import/Export state
     const [openImportDialog, setOpenImportDialog] = useState(false);
@@ -122,9 +131,10 @@ const StudentsPage: React.FC = () => {
     const { data: classes } = useGetClassesQuery();
     const { data, isLoading, error, refetch } = useGetStudentsQuery({
         page,
-        pageSize: 9,
+        pageSize: viewMode === 'grid' ? 9 : 10,
         search: search || undefined,
         class_id: classFilter || undefined,
+        status: statusFilter || undefined,
     });
     const [createStudent, { isLoading: isCreating }] = useCreateStudentMutation();
     const [updateStudent, { isLoading: isUpdating }] = useUpdateStudentMutation();
@@ -336,6 +346,36 @@ const StudentsPage: React.FC = () => {
         { value: 'other', label: 'Other' },
     ];
 
+    const studentStatusOptions = [
+        { value: 'active', label: 'Active', color: 'success' as const },
+        { value: 'inactive', label: 'Inactive', color: 'default' as const },
+        { value: 'suspended', label: 'Suspended', color: 'warning' as const },
+        { value: 'graduated', label: 'Graduated', color: 'info' as const },
+        { value: 'dropped', label: 'Dropped', color: 'error' as const },
+        { value: 'transferred', label: 'Transferred', color: 'default' as const },
+    ];
+
+    const handleStatusChange = async (newStatus: string) => {
+        if (!statusChangeStudent) return;
+        try {
+            await updateStudent({
+                id: statusChangeStudent.id,
+                data: { status: newStatus }
+            }).unwrap();
+            toast.success(`Student status changed to ${newStatus}`);
+            setStatusMenuAnchor(null);
+            setStatusChangeStudent(null);
+            refetch();
+        } catch (err: any) {
+            toast.error(err?.data?.detail || 'Status change failed');
+        }
+    };
+
+    const openStatusMenu = (event: React.MouseEvent<HTMLElement>, student: Student) => {
+        setStatusMenuAnchor(event.currentTarget);
+        setStatusChangeStudent(student);
+    };
+
     // Import/Export Handlers
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -472,18 +512,18 @@ const StudentsPage: React.FC = () => {
 
             {/* Search & Filter */}
             <Card sx={{ mb: 3, p: 2 }}>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                     <TextField
                         placeholder="Search by name or admission number..."
                         size="small"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        sx={{ flex: 1 }}
+                        sx={{ flex: 1, minWidth: 200 }}
                         InputProps={{
                             startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
                         }}
                     />
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <FormControl size="small" sx={{ minWidth: 130 }}>
                         <InputLabel>Class</InputLabel>
                         <Select value={classFilter} label="Class" onChange={(e) => setClassFilter(e.target.value)}>
                             <MenuItem value="">All Classes</MenuItem>
@@ -492,41 +532,161 @@ const StudentsPage: React.FC = () => {
                             ))}
                         </Select>
                     </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 130 }}>
+                        <InputLabel>Status</InputLabel>
+                        <Select value={statusFilter} label="Status" onChange={(e) => setStatusFilter(e.target.value)}>
+                            <MenuItem value="">All Status</MenuItem>
+                            {studentStatusOptions.map((opt) => (
+                                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_, v) => v && setViewMode(v)}
+                        size="small"
+                    >
+                        <ToggleButton value="grid">
+                            <Tooltip title="Grid View"><ViewModuleIcon /></Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="list">
+                            <Tooltip title="List View"><ViewListIcon /></Tooltip>
+                        </ToggleButton>
+                    </ToggleButtonGroup>
                 </Box>
             </Card>
 
-            {/* Content State */}
+            {/* Loading and Error States */}
             {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>}
             {error && <Alert severity="error" sx={{ mb: 3 }}>Failed to load students.</Alert>}
 
-            <Grid container spacing={3}>
-                {data?.items.map((student) => (
-                    <Grid item xs={12} sm={6} md={4} key={student.id}>
-                        <Card sx={{ height: '100%' }}>
-                            <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                                    <Avatar sx={{ width: 64, height: 64, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fontSize: '1.5rem' }}>
-                                        {student.first_name[0]}{student.last_name[0]}
-                                    </Avatar>
-                                    <Box>
-                                        <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
-                                        <IconButton size="small" onClick={() => setDeleteConfirm(student.id)}><DeleteIcon fontSize="small" /></IconButton>
+            {/* Grid View */}
+            {viewMode === 'grid' && !isLoading && !error && (
+                <Grid container spacing={3}>
+                    {data?.items.map((student) => (
+                        <Grid item xs={12} sm={6} md={4} key={student.id}>
+                            <Card sx={{ height: '100%' }}>
+                                <CardContent sx={{ p: 3 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                                        <Avatar sx={{ width: 64, height: 64, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fontSize: '1.5rem' }}>
+                                            {student.first_name[0]}{student.last_name[0]}
+                                        </Avatar>
+                                        <Box>
+                                            <Tooltip title="Edit">
+                                                <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Change Status">
+                                                <IconButton size="small" onClick={(e) => openStatusMenu(e, student)}><MoreVertIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton size="small" onClick={() => setDeleteConfirm(student.id)}><DeleteIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                        </Box>
                                     </Box>
-                                </Box>
-                                <Typography variant="h6" fontWeight="bold" gutterBottom>{student.first_name} {student.last_name}</Typography>
-                                <Typography variant="body2" color="text.secondary">Adm: {student.admission_number}</Typography>
-                                <Typography variant="body2" color="text.secondary">{student.email}</Typography>
-                                <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                                    {classes?.find(c => c.id === student.class_id) && (
-                                        <Chip label={`${classes.find(c => c.id === student.class_id)?.name}-${classes.find(c => c.id === student.class_id)?.section}`} size="small" color="primary" variant="outlined" />
-                                    )}
-                                    <Chip label={student.status} size="small" color={student.status === 'active' ? 'success' : 'default'} />
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    </Grid>
+                                    <Typography variant="h6" fontWeight="bold" gutterBottom>{student.first_name} {student.last_name}</Typography>
+                                    <Typography variant="body2" color="text.secondary">Adm: {student.admission_number}</Typography>
+                                    <Typography variant="body2" color="text.secondary">{student.email}</Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+                                        {classes?.find(c => c.id === student.class_id) && (
+                                            <Chip label={`${classes.find(c => c.id === student.class_id)?.name}-${classes.find(c => c.id === student.class_id)?.section}`} size="small" color="primary" variant="outlined" />
+                                        )}
+                                        <Chip
+                                            label={student.status}
+                                            size="small"
+                                            color={studentStatusOptions.find(o => o.value === student.status)?.color || 'default'}
+                                        />
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            )}
+
+            {/* List View */}
+            {viewMode === 'list' && !isLoading && !error && (
+                <Card>
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Student</TableCell>
+                                    <TableCell>Admission No.</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Class</TableCell>
+                                    <TableCell>Status</TableCell>
+                                    <TableCell align="right">Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {data?.items.map((student) => (
+                                    <TableRow key={student.id} hover>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                                                    {student.first_name[0]}{student.last_name[0]}
+                                                </Avatar>
+                                                <Box>
+                                                    <Typography variant="body2" fontWeight={600}>{student.first_name} {student.last_name}</Typography>
+                                                    <Typography variant="caption" color="text.secondary">{student.phone || '-'}</Typography>
+                                                </Box>
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>{student.admission_number}</TableCell>
+                                        <TableCell>{student.email || '-'}</TableCell>
+                                        <TableCell>
+                                            {classes?.find(c => c.id === student.class_id)
+                                                ? `${classes.find(c => c.id === student.class_id)?.name}-${classes.find(c => c.id === student.class_id)?.section}`
+                                                : '-'
+                                            }
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                label={student.status}
+                                                size="small"
+                                                color={studentStatusOptions.find(o => o.value === student.status)?.color || 'default'}
+                                                sx={{ textTransform: 'capitalize' }}
+                                            />
+                                        </TableCell>
+                                        <TableCell align="right">
+                                            <Tooltip title="Edit">
+                                                <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Change Status">
+                                                <IconButton size="small" onClick={(e) => openStatusMenu(e, student)}><MoreVertIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton size="small" onClick={() => setDeleteConfirm(student.id)}><DeleteIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Card>
+            )}
+
+            {/* Status Change Menu */}
+            <Menu
+                anchorEl={statusMenuAnchor}
+                open={Boolean(statusMenuAnchor)}
+                onClose={() => { setStatusMenuAnchor(null); setStatusChangeStudent(null); }}
+            >
+                <Typography variant="caption" sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
+                    Change Status
+                </Typography>
+                {studentStatusOptions.map((opt) => (
+                    <MenuItem
+                        key={opt.value}
+                        onClick={() => handleStatusChange(opt.value)}
+                        selected={statusChangeStudent?.status === opt.value}
+                    >
+                        <Chip label={opt.label} size="small" color={opt.color} sx={{ mr: 1 }} />
+                    </MenuItem>
                 ))}
-            </Grid>
+            </Menu>
 
             {data && data.total_pages > 1 && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>

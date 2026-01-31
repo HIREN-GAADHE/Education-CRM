@@ -166,7 +166,8 @@ export const timetableApi = apiSlice.injectEndpoints({
             query: (params) => {
                 const searchParams = new URLSearchParams();
                 if (params?.academicYear) searchParams.append('academic_year', params.academicYear);
-                if (params?.activeOnly !== false) searchParams.append('active_only', 'true');
+                // Explicitly send active_only value - backend defaults to true if not sent
+                searchParams.append('active_only', params?.activeOnly === false ? 'false' : 'true');
                 const queryString = searchParams.toString();
                 return `/timetable/time-slots${queryString ? `?${queryString}` : ''}`;
             },
@@ -201,7 +202,8 @@ export const timetableApi = apiSlice.injectEndpoints({
             query: (params) => {
                 const searchParams = new URLSearchParams();
                 if (params?.roomType) searchParams.append('room_type', params.roomType);
-                if (params?.activeOnly !== false) searchParams.append('active_only', 'true');
+                // Explicitly send active_only value - backend defaults to true if not sent
+                searchParams.append('active_only', params?.activeOnly === false ? 'false' : 'true');
                 const queryString = searchParams.toString();
                 return `/timetable/rooms${queryString ? `?${queryString}` : ''}`;
             },

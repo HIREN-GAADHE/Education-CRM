@@ -4,7 +4,7 @@ import {
     TextField, InputAdornment, Button, Dialog, DialogTitle, DialogContent,
     DialogActions, CircularProgress, Alert, Table, TableBody, Pagination,
     TableCell, TableContainer, TableHead, TableRow, FormControl, InputLabel,
-    Select, MenuItem, OutlinedInput, Checkbox, ListItemText
+    Select, MenuItem, OutlinedInput, Checkbox, ListItemText, Tooltip
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -221,27 +221,22 @@ const StaffPage: React.FC = () => {
                                                 <Chip label={staff.staff_type} size="small" variant="outlined" sx={{ textTransform: 'capitalize' }} />
                                             </TableCell>
                                             <TableCell>{staff.designation || '-'}</TableCell>
-                                            <TableCell>{staff.designation || '-'}</TableCell>
-                                            <TableCell>
-                                                {staff.department || '-'}
-                                                {staff.associated_classes && staff.associated_classes.length > 0 && (
-                                                    <Box mt={0.5}>
-                                                        {staff.associated_classes.map(c => (
-                                                            <Chip key={c.id} label={`${c.name}-${c.section}`} size="small" style={{ fontSize: '0.65rem', height: 20, marginRight: 2 }} />
-                                                        ))}
-                                                    </Box>
-                                                )}
-                                            </TableCell>
+                                            <TableCell>{staff.department || '-'}</TableCell>
                                             <TableCell>
                                                 <Chip
                                                     label={staff.status}
                                                     size="small"
-                                                    color={staff.status === 'active' ? 'success' : 'default'}
+                                                    color={staff.status === 'active' ? 'success' : staff.status === 'on_leave' ? 'warning' : 'default'}
+                                                    sx={{ textTransform: 'capitalize' }}
                                                 />
                                             </TableCell>
                                             <TableCell align="right">
-                                                <IconButton size="small" onClick={() => handleOpenEdit(staff)}><EditIcon fontSize="small" /></IconButton>
-                                                <IconButton size="small" onClick={() => setDeleteConfirm(staff.id)}><DeleteIcon fontSize="small" /></IconButton>
+                                                <Tooltip title="Edit">
+                                                    <IconButton size="small" onClick={() => handleOpenEdit(staff)}><EditIcon fontSize="small" /></IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Delete">
+                                                    <IconButton size="small" onClick={() => setDeleteConfirm(staff.id)}><DeleteIcon fontSize="small" /></IconButton>
+                                                </Tooltip>
                                             </TableCell>
                                         </TableRow>
                                     ))}

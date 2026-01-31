@@ -4,7 +4,7 @@ import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, Chip, Dialog, DialogTitle, DialogContent,
     DialogActions, TextField, FormControl, InputLabel, Select, MenuItem,
-    Alert, Snackbar, CircularProgress, IconButton, FormControlLabel, Checkbox
+    Alert, Snackbar, CircularProgress, IconButton, FormControlLabel, Checkbox, Switch, Tooltip
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -68,9 +68,9 @@ const TimetablePage: React.FC = () => {
     const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
     const [editingRoom, setEditingRoom] = useState<Room | null>(null);
 
-    // API Queries
-    const { data: timeSlotsData, isLoading: slotsLoading } = useGetTimeSlotsQuery();
-    const { data: roomsData, isLoading: roomsLoading } = useGetRoomsQuery();
+    // API Queries - fetch all including inactive so they can be reactivated
+    const { data: timeSlotsData, isLoading: slotsLoading } = useGetTimeSlotsQuery({ activeOnly: false });
+    const { data: roomsData, isLoading: roomsLoading } = useGetRoomsQuery({ activeOnly: false });
     const { data: entriesData, isLoading: entriesLoading, refetch } = useGetTimetableEntriesQuery({
         className: selectedClassName || undefined,
         section: selectedSection || undefined,
@@ -112,6 +112,7 @@ const TimetablePage: React.FC = () => {
         end_time: '09:00',
         slot_type: 'class' as TimeSlotType,
         order: 0,
+        is_active: true,
     });
 
     // Room form state
@@ -218,6 +219,7 @@ const TimetablePage: React.FC = () => {
                         end_time: slotForm.end_time,
                         slot_type: slotForm.slot_type,
                         order: slotForm.order,
+                        is_active: slotForm.is_active,
                     }
                 }).unwrap();
                 setSnackbar({ open: true, message: 'Time slot updated successfully', severity: 'success' });
@@ -230,12 +232,13 @@ const TimetablePage: React.FC = () => {
                     end_time: slotForm.end_time,
                     slot_type: slotForm.slot_type,
                     order: slotForm.order,
+                    is_active: slotForm.is_active,
                 }).unwrap();
                 setSnackbar({ open: true, message: 'Time slot added successfully', severity: 'success' });
             }
             setSlotDialogOpen(false);
             setEditingSlot(null);
-            setSlotForm({ name: '', code: '', start_time: '08:00', end_time: '09:00', slot_type: 'class', order: 0 });
+            setSlotForm({ name: '', code: '', start_time: '08:00', end_time: '09:00', slot_type: 'class', order: 0, is_active: true });
         } catch (error: any) {
             setSnackbar({ open: true, message: error.data?.detail || 'Failed to save slot', severity: 'error' });
         }
@@ -316,6 +319,22 @@ const TimetablePage: React.FC = () => {
         }
     };
 
+    const handleToggleSlotStatus = async (slot: TimeSlot) => {
+        try {
+            await updateTimeSlot({
+                id: slot.id,
+                data: { is_active: !slot.is_active }
+            }).unwrap();
+            setSnackbar({
+                open: true,
+                message: `Time slot ${slot.is_active ? 'deactivated' : 'activated'}`,
+                severity: 'success'
+            });
+        } catch (error: any) {
+            setSnackbar({ open: true, message: error.data?.detail || 'Failed to update status', severity: 'error' });
+        }
+    };
+
     const handleDeleteRoom = async (id: string) => {
         if (confirm('Are you sure you want to delete this room?')) {
             try {
@@ -352,6 +371,7 @@ const TimetablePage: React.FC = () => {
             end_time: slot.end_time,
             slot_type: slot.slot_type,
             order: slot.order,
+            is_active: slot.is_active ?? true,
         });
         setSlotDialogOpen(true);
     };
@@ -463,7 +483,10 @@ const TimetablePage: React.FC = () => {
                                     return (
                                         <TableCell key={dayIndex} align="center" sx={{ minWidth: 120, p: 1 }}>
                                             {entry ? (
-                                                <Box sx={{ position: 'relative' }}>
+                                                <Box sx={{
+                                                    position: 'relative',
+                                                    '&:hover .action-buttons': { opacity: 1 }
+                                                }}>
                                                     <Typography variant="body2" fontWeight="bold" color="primary">
                                                         {entry.subject_name || entry.course?.name || 'Subject'}
                                                     </Typography>
@@ -471,47 +494,37 @@ const TimetablePage: React.FC = () => {
                                                         {entry.teacher?.first_name} {entry.teacher?.last_name}
                                                     </Typography>
                                                     <Chip size="small" label={entry.room?.name || 'Room'} sx={{ mt: 0.5 }} />
-                                                    <Box sx={{
-                                                        position: 'absolute',
-                                                        top: 0,
-                                                        right: 0,
-                                                        left: 0,
-                                                        bottom: 0,
-                                                        bgcolor: 'rgba(0,0,0,0.03)',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        justifyContent: 'center',
-                                                        gap: 1,
-                                                        p: 1,
-                                                        opacity: 0,
-                                                        transition: 'opacity 0.2s',
-                                                        '&:hover': {
-                                                            opacity: 1,
-                                                            bgcolor: 'rgba(0,0,0,0.75)',
-                                                        }
-                                                    }}>
-                                                        <Button
-                                                            size="small"
-                                                            variant="contained"
-                                                            color="primary"
-                                                            startIcon={<EditIcon />}
-                                                            onClick={() => handleEditEntry(entry)}
-                                                            fullWidth
-                                                            sx={{ fontSize: '0.75rem', py: 0.8, fontWeight: 'bold' }}
-                                                        >
-                                                            Edit Entry
-                                                        </Button>
-                                                        <Button
-                                                            size="small"
-                                                            variant="contained"
-                                                            color="error"
-                                                            startIcon={<DeleteSweepIcon />}
-                                                            onClick={() => handleDeleteAllEntries(entry)}
-                                                            fullWidth
-                                                            sx={{ fontSize: '0.75rem', py: 0.8, fontWeight: 'bold' }}
-                                                        >
-                                                            Delete All Week
-                                                        </Button>
+                                                    <Box
+                                                        className="action-buttons"
+                                                        sx={{
+                                                            display: 'flex',
+                                                            justifyContent: 'center',
+                                                            gap: 0.5,
+                                                            mt: 1,
+                                                            opacity: 0,
+                                                            transition: 'opacity 0.2s',
+                                                        }}
+                                                    >
+                                                        <Tooltip title="Edit Entry">
+                                                            <IconButton
+                                                                size="small"
+                                                                color="primary"
+                                                                onClick={() => handleEditEntry(entry)}
+                                                                sx={{ bgcolor: 'primary.light', '&:hover': { bgcolor: 'primary.main', color: 'white' } }}
+                                                            >
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        <Tooltip title="Delete All Week">
+                                                            <IconButton
+                                                                size="small"
+                                                                color="error"
+                                                                onClick={() => handleDeleteAllEntries(entry)}
+                                                                sx={{ bgcolor: 'error.light', '&:hover': { bgcolor: 'error.main', color: 'white' } }}
+                                                            >
+                                                                <DeleteSweepIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
                                                     </Box>
                                                 </Box>
                                             ) : (
@@ -676,19 +689,26 @@ const TimetablePage: React.FC = () => {
                                                 />
                                             </TableCell>
                                             <TableCell>
-                                                <Chip
-                                                    label={slot.is_active ? 'Active' : 'Inactive'}
-                                                    color={slot.is_active ? 'success' : 'default'}
-                                                    size="small"
-                                                />
+                                                <Tooltip title={slot.is_active ? 'Click to deactivate' : 'Click to activate'}>
+                                                    <Switch
+                                                        checked={slot.is_active}
+                                                        onChange={() => handleToggleSlotStatus(slot)}
+                                                        color="success"
+                                                        size="small"
+                                                    />
+                                                </Tooltip>
                                             </TableCell>
                                             <TableCell>
-                                                <IconButton size="small" onClick={() => handleEditSlot(slot)} sx={{ mr: 0.5 }}>
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                                <IconButton size="small" onClick={() => handleDeleteSlot(slot.id)}>
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
+                                                <Tooltip title="Edit">
+                                                    <IconButton size="small" onClick={() => handleEditSlot(slot)} sx={{ mr: 0.5 }}>
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Delete">
+                                                    <IconButton size="small" onClick={() => handleDeleteSlot(slot.id)}>
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </TableCell>
                                         </TableRow>
                                     ))}

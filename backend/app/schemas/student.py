@@ -12,6 +12,7 @@ class StudentStatus(str, Enum):
     APPLICANT = "applicant"
     ENROLLED = "enrolled"
     ACTIVE = "active"
+    INACTIVE = "inactive"
     SUSPENDED = "suspended"
     GRADUATED = "graduated"
     DROPPED = "dropped"
@@ -26,32 +27,32 @@ class Gender(str, Enum):
 
 class StudentBase(BaseModel):
     admission_number: str = Field(..., min_length=1, max_length=50)
-    roll_number: Optional[str] = None
+    roll_number: Optional[str] = Field(None, max_length=50)
     
     # Personal
     first_name: str = Field(..., min_length=1, max_length=100)
-    middle_name: Optional[str] = None
+    middle_name: Optional[str] = Field(None, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     date_of_birth: Optional[date] = None
     gender: Optional[Gender] = None
-    blood_group: Optional[str] = None
-    nationality: Optional[str] = "Indian"
-    religion: Optional[str] = None
-    caste: Optional[str] = None
-    category: Optional[str] = None
+    blood_group: Optional[str] = Field(None, max_length=50)  # Increased to handle legacy data
+    nationality: Optional[str] = Field("Indian", max_length=50)
+    religion: Optional[str] = Field(None, max_length=50)
+    caste: Optional[str] = Field(None, max_length=50)
+    category: Optional[str] = Field(None, max_length=50)
     
     # Contact
     email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    alternate_phone: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
+    alternate_phone: Optional[str] = Field(None, max_length=20)
     
     # Address
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pincode: Optional[str] = None
-    country: Optional[str] = "India"
+    address_line1: Optional[str] = Field(None, max_length=255)
+    address_line2: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    pincode: Optional[str] = Field(None, max_length=20)
+    country: Optional[str] = Field("India", max_length=100)
     
     # Parent/Guardian
     parent_email: Optional[EmailStr] = None

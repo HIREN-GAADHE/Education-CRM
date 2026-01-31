@@ -5,7 +5,7 @@ import {
     DialogActions, CircularProgress, Alert, Pagination, Stepper, Step, StepLabel,
     FormControl, InputLabel, Select, MenuItem, Divider, Table, TableBody,
     TableCell, TableHead, TableRow, Paper, TableContainer, ToggleButton, ToggleButtonGroup,
-    Menu, Tooltip
+    Menu, Tooltip, Checkbox, FormControlLabel
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -376,6 +376,8 @@ const StudentsPage: React.FC = () => {
         setStatusChangeStudent(student);
     };
 
+    const [updateExisting, setUpdateExisting] = useState(false);
+
     // Import/Export Handlers
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -400,9 +402,17 @@ const StudentsPage: React.FC = () => {
         try {
             const formData = new FormData();
             formData.append('file', selectedFile);
+            formData.append('update_existing', updateExisting.toString());
+            // Default skip_duplicates is true if update_existing is false
+            formData.append('skip_duplicates', (!updateExisting).toString());
 
             const result = await importStudents(formData).unwrap();
             setImportResult(result);
+
+            // Refresh student list if changes happened
+            if (result.imported > 0 || result.updated > 0) {
+                refetch();
+            }
 
             if (result.successful > 0) {
                 toast.success(`Successfully imported ${result.successful} student(s)!`);
@@ -924,6 +934,17 @@ const StudentsPage: React.FC = () => {
                                     </Typography>
                                 </Box>
                             )}
+
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={updateExisting}
+                                        onChange={(e) => setUpdateExisting(e.target.checked)}
+                                    />
+                                }
+                                label="Update existing students (match by admission number)"
+                                sx={{ mt: 2 }}
+                            />
                         </Box>
                     ) : (
                         <Box>
@@ -932,7 +953,8 @@ const StudentsPage: React.FC = () => {
                                 <Typography variant="body2">
                                     Total: {importResult.total_rows} |
                                     Successful: {importResult.successful} |
-                                    Failed: {importResult.failed}
+                                    Failed: {importResult.failed} |
+                                    Fees Created: {importResult.fees_created || 0}
                                 </Typography>
                             </Alert>
 

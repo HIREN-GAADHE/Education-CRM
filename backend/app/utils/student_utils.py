@@ -245,13 +245,14 @@ def export_students_to_excel(students: List[Dict[str, Any]]) -> bytes:
 def create_import_template() -> bytes:
     """
     Create an Excel template file for student import with sample data.
+    Includes class linking and fee assignment fields.
     
     Returns:
         Excel file content as bytes with headers and sample row
     """
     from openpyxl.utils import get_column_letter
     
-    # Sample data
+    # Sample data - includes class and fee fields
     sample_data = {
         'admission_number': ['ADM001'],
         'roll_number': ['ROLL001'],
@@ -287,13 +288,19 @@ def create_import_template() -> bytes:
         'course': ['Science'],
         'department': ['Physics'],
         'batch': ['2023-2024'],
-        'section': ['A'],
+        'class_name': ['10'],        # Class name (must match existing class in system)
+        'section': ['A'],            # Section (combined with class_name to link to SchoolClass)
         'semester': [1],
         'year': [1],
         'admission_date': ['2023-06-01'],
         'admission_type': ['Regular'],
         'status': ['active'],
-        'avatar_url': ['']
+        'avatar_url': [''],
+        # Fee assignment fields (optional)
+        'fee_type': ['tuition'],     # Options: tuition, admission, examination, library, sports, transport, hostel, other
+        'fee_amount': ['50000'],     # Total fee amount to assign
+        'academic_year': ['2024-25'], # Academic year for the fee
+        'fee_due_date': ['2024-06-30'] # Due date in YYYY-MM-DD format
     }
     
     df = pd.DataFrame(sample_data)
@@ -325,6 +332,7 @@ def _get_export_columns() -> List[str]:
         'parent_email', 'father_name', 'father_phone', 'father_occupation',
         'mother_name', 'mother_phone', 'mother_occupation',
         'guardian_name', 'guardian_phone', 'guardian_relation',
-        'course', 'department', 'batch', 'section', 'semester', 'year',
-        'admission_date', 'admission_type', 'status', 'avatar_url'
+        'course', 'department', 'batch', 'class_name', 'section', 'semester', 'year',
+        'admission_date', 'admission_type', 'status', 'avatar_url',
+        'fee_type', 'fee_amount', 'academic_year', 'fee_due_date'
     ]

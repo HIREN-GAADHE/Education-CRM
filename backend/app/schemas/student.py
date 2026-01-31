@@ -124,6 +124,7 @@ class StudentUpdate(BaseModel):
     guardian_relation: Optional[str] = None
     course: Optional[str] = None
     class_id: Optional[UUID] = None
+    class_name: Optional[str] = None
     department: Optional[str] = None
     batch: Optional[str] = None
     section: Optional[str] = None

@@ -2,12 +2,12 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from datetime import datetime
 
 from app.config import get_db
 from app.api.deps import get_current_user, get_current_tenant
-from app.models import User, SchoolClass
+from app.models import User, SchoolClass, Student
 from app.schemas import (
     SchoolClassCreate, 
     SchoolClassUpdate, 
@@ -25,19 +25,38 @@ async def create_school_class(
     tenant=Depends(get_current_tenant)
 ):
     """Create a new school class (standard/section)."""
-    # Check if exists
+    # Check if exists (including deleted)
     stmt = select(SchoolClass).where(
         SchoolClass.tenant_id == tenant.id,
         SchoolClass.name == data.name,
         SchoolClass.section == data.section
-    )
+    ).order_by(SchoolClass.is_deleted.asc(), SchoolClass.updated_at.desc())
+    
     result = await db.execute(stmt)
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Class with this name and section already exists"
+    existing = result.scalars().first()
+    
+    if existing:
+        if not existing.is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Class with this name and section already exists"
+            )
+        
+        # Reactivate soft-deleted class
+        existing.is_deleted = False
+        existing.deleted_at = None
+        for key, value in data.model_dump().items():
+            setattr(existing, key, value)
+            
+        await db.commit()
+        await db.refresh(existing)
+        
+        return SchoolClassResponse(
+            **{k: getattr(existing, k) for k in ['id', 'tenant_id', 'name', 'section', 'capacity', 'class_teacher_id', 'created_at', 'updated_at']},
+            student_count=0
         )
     
+    # Create new class
     new_class = SchoolClass(
         **data.model_dump(),
         tenant_id=tenant.id
@@ -45,7 +64,12 @@ async def create_school_class(
     db.add(new_class)
     await db.commit()
     await db.refresh(new_class)
-    return new_class
+    
+    # Return with student_count = 0 for new class
+    return SchoolClassResponse(
+        **{k: getattr(new_class, k) for k in ['id', 'tenant_id', 'name', 'section', 'capacity', 'class_teacher_id', 'created_at', 'updated_at']},
+        student_count=0
+    )
 
 @router.get("/classes", response_model=List[SchoolClassResponse])
 async def list_school_classes(
@@ -53,14 +77,44 @@ async def list_school_classes(
     current_user: User = Depends(get_current_user),
     tenant=Depends(get_current_tenant)
 ):
-    """List all classes for the tenant."""
+    """List all classes for the tenant with student counts."""
+    # Get all classes
     stmt = select(SchoolClass).where(
         SchoolClass.tenant_id == tenant.id,
         SchoolClass.is_deleted == False
     ).order_by(SchoolClass.name, SchoolClass.section)
     
     result = await db.execute(stmt)
-    return result.scalars().all()
+    classes = result.scalars().all()
+    
+    # Get student counts for each class
+    count_stmt = select(
+        Student.class_id,
+        func.count(Student.id).label('count')
+    ).where(
+        Student.tenant_id == tenant.id,
+        Student.is_deleted == False
+    ).group_by(Student.class_id)
+    
+    count_result = await db.execute(count_stmt)
+    counts = {str(row.class_id): row.count for row in count_result.all()}
+    
+    # Build response with student counts
+    response = []
+    for cls in classes:
+        response.append(SchoolClassResponse(
+            id=cls.id,
+            tenant_id=cls.tenant_id,
+            name=cls.name,
+            section=cls.section,
+            capacity=cls.capacity,
+            class_teacher_id=cls.class_teacher_id,
+            student_count=counts.get(str(cls.id), 0),
+            created_at=cls.created_at,
+            updated_at=cls.updated_at
+        ))
+    
+    return response
 
 @router.get("/classes/{class_id}", response_model=SchoolClassResponse)
 async def get_school_class(
@@ -79,8 +133,27 @@ async def get_school_class(
     
     if not school_class:
         raise HTTPException(status_code=404, detail="Class not found")
-        
-    return school_class
+    
+    # Get student count
+    count_stmt = select(func.count(Student.id)).where(
+        Student.class_id == class_id,
+        Student.tenant_id == tenant.id,
+        Student.is_deleted == False
+    )
+    count_result = await db.execute(count_stmt)
+    student_count = count_result.scalar() or 0
+    
+    return SchoolClassResponse(
+        id=school_class.id,
+        tenant_id=school_class.tenant_id,
+        name=school_class.name,
+        section=school_class.section,
+        capacity=school_class.capacity,
+        class_teacher_id=school_class.class_teacher_id,
+        student_count=student_count,
+        created_at=school_class.created_at,
+        updated_at=school_class.updated_at
+    )
 
 @router.put("/classes/{class_id}", response_model=SchoolClassResponse)
 async def update_school_class(
@@ -106,7 +179,27 @@ async def update_school_class(
     
     await db.commit()
     await db.refresh(school_class)
-    return school_class
+    
+    # Get student count
+    count_stmt = select(func.count(Student.id)).where(
+        Student.class_id == class_id,
+        Student.tenant_id == tenant.id,
+        Student.is_deleted == False
+    )
+    count_result = await db.execute(count_stmt)
+    student_count = count_result.scalar() or 0
+    
+    return SchoolClassResponse(
+        id=school_class.id,
+        tenant_id=school_class.tenant_id,
+        name=school_class.name,
+        section=school_class.section,
+        capacity=school_class.capacity,
+        class_teacher_id=school_class.class_teacher_id,
+        student_count=student_count,
+        created_at=school_class.created_at,
+        updated_at=school_class.updated_at
+    )
 
 @router.delete("/classes/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_school_class(

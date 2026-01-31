@@ -66,6 +66,7 @@ export interface SchoolClass {
     section: string;
     capacity: number;
     class_teacher_id?: string;
+    student_count: number;  // Actual enrolled student count
     created_at: string;
     updated_at?: string;
 }

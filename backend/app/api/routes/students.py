@@ -24,6 +24,7 @@ from app.utils.student_utils import (
     parse_csv_file, parse_excel_file, validate_student_data,
     export_students_to_csv, export_students_to_excel, create_import_template
 )
+from app.core.services.import_export_service import ImportExportService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/students", tags=["Students"])
@@ -468,83 +469,41 @@ async def import_students(
                 detail="Invalid file format. Only CSV and Excel (.xlsx, .xls) files are supported."
             )
         
-        # Read file content
+        # Read content
         content = await file.read()
         
-        # Parse based on file type
+        # Extract options from form data
+        form = await request.form()
+        update_existing = str(form.get("update_existing", "false")).lower() == "true"
+        skip_duplicates = str(form.get("skip_duplicates", "true")).lower() == "true"
+        
+        # Use ImportExportService
+        service = ImportExportService(db)
+        
         if filename.endswith('.csv'):
-            records, parse_errors = parse_csv_file(content)
+            results = await service.import_students_from_csv(
+                str(current_user.tenant_id), content, skip_duplicates, update_existing
+            )
         else:
-            records, parse_errors = parse_excel_file(content)
-        
-        # Initialize result tracking
-        result = StudentImportResult(
-            total_rows=len(records) + len(parse_errors),
-            successful=0,
-            failed=len(parse_errors),
-            errors=[StudentImportError(row=0, message=err) for err in parse_errors],
-            imported_ids=[]
+            results = await service.import_students_from_excel(
+                str(current_user.tenant_id), content, skip_duplicates, update_existing
+            )
+            
+        # Map results to response schema
+        response_errors = []
+        for err in results.get("errors", []):
+            response_errors.append(StudentImportError(
+                row=err.get("row", 0),
+                message=err.get("error", "Unknown error")
+            ))
+            
+        return StudentImportResult(
+            total_rows=results.get("total_rows", 0),
+            successful=results.get("imported", 0) + results.get("updated", 0),
+            failed=len(results.get("errors", [])),
+            errors=response_errors,
+            imported_ids=results.get("imported_ids", [])
         )
-        
-        # Process each record
-        for idx, record in enumerate(records, start=1):
-            try:
-                # Validate data
-                validation_errors = validate_student_data(record)
-                if validation_errors:
-                    result.failed += 1
-                    for error in validation_errors:
-                        result.errors.append(StudentImportError(
-                            row=idx,
-                            field=None,
-                            message=error
-                        ))
-                    continue
-                
-                # Check for duplicate admission number within tenant
-                admission_number = record.get('admission_number')
-                existing = await db.execute(
-                    select(Student).where(
-                        Student.admission_number == admission_number,
-                        Student.tenant_id == current_user.tenant_id,
-                        Student.is_deleted == False
-                    )
-                )
-                if existing.scalar_one_or_none():
-                    result.failed += 1
-                    result.errors.append(StudentImportError(
-                        row=idx,
-                        field='admission_number',
-                        message=f"Student with admission number '{admission_number}' already exists"
-                    ))
-                    continue
-                
-                # Create student
-                student_data = StudentCreate(**record)
-                student = Student(**student_data.model_dump())
-                student.tenant_id = current_user.tenant_id
-                
-                db.add(student)
-                await db.flush()  # Flush to get ID without committing
-                
-                result.successful += 1
-                result.imported_ids.append(student.id)
-                
-            except Exception as e:
-                result.failed += 1
-                result.errors.append(StudentImportError(
-                    row=idx,
-                    message=f"Error importing student: {str(e)}"
-                ))
-                logger.error(f"Error importing student at row {idx}: {e}")
-        
-        # Commit all successful imports
-        if result.successful > 0:
-            await db.commit()
-        else:
-            await db.rollback()
-        
-        return result
         
     except HTTPException:
         raise

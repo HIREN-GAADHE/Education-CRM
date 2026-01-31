@@ -135,7 +135,7 @@ const ClassesPage: React.FC = () => {
                                     Teacher: {getTeacherName(cls.class_teacher_id)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Capacity: {cls.capacity} students
+                                    Students: {cls.student_count} / {cls.capacity}
                                 </Typography>
                                 <Box sx={{ mt: 2 }}>
                                     <Chip label="Active" size="small" color="success" variant="outlined" />

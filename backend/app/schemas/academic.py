@@ -21,6 +21,7 @@ class SchoolClassUpdate(BaseModel):
 class SchoolClassResponse(SchoolClassBase):
     id: UUID
     tenant_id: UUID
+    student_count: int = 0  # Number of students in this class
     created_at: datetime
     updated_at: Optional[datetime] = None
 

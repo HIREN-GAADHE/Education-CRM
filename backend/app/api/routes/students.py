@@ -501,6 +501,9 @@ async def import_students(
             total_rows=results.get("total_rows", 0),
             successful=results.get("imported", 0) + results.get("updated", 0),
             failed=len(results.get("errors", [])),
+            imported=results.get("imported", 0),
+            updated=results.get("updated", 0),
+            fees_created=results.get("fees_created", 0),
             errors=response_errors,
             imported_ids=results.get("imported_ids", [])
         )

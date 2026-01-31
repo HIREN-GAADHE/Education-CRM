@@ -167,6 +167,9 @@ class StudentImportResult(BaseModel):
     total_rows: int
     successful: int
     failed: int
+    imported: int = 0
+    updated: int = 0
+    fees_created: int = 0
     errors: List[StudentImportError] = []
     imported_ids: List[UUID] = []
 

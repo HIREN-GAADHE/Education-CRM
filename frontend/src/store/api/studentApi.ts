@@ -109,6 +109,9 @@ export interface StudentImportResult {
     total_rows: number;
     successful: number;
     failed: number;
+    imported: number;
+    updated: number;
+    fees_created: number;
     errors: StudentImportError[];
     imported_ids: string[];
 }

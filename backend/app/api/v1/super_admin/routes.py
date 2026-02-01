@@ -289,7 +289,7 @@ async def create_tenant(
         tenant = Tenant(
             name=data.name,
             slug=data.slug,
-            domain=data.domain,
+            domain=data.domain if data.domain else None,
             email=data.email,
             status=TenantStatus.ACTIVE,
             plan_id=data.plan_id,
@@ -447,6 +447,8 @@ async def update_tenant(
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        if field == "domain" and not value:
+            value = None
         setattr(tenant, field, value)
         
     # If suspending, we should maybe invalidate tokens (handled by middleware check)

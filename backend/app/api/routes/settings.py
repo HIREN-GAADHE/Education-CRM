@@ -254,10 +254,18 @@ async def update_settings(
     
     # Update institution settings
     if data.institution:
+        tenant = await db.get(Tenant, current_user.tenant_id)
+
         if data.institution.institution_name is not None:
             settings.institution_name = data.institution.institution_name
+            if tenant:
+                tenant.name = data.institution.institution_name
+                
         if data.institution.institution_logo_url is not None:
             settings.institution_logo_url = data.institution.institution_logo_url
+            if tenant:
+                tenant.logo_url = data.institution.institution_logo_url
+                
         if data.institution.institution_address is not None:
             settings.institution_address = data.institution.institution_address
         if data.institution.institution_phone is not None:
@@ -516,10 +524,18 @@ async def update_institution_settings(
     """Update institution settings only."""
     settings = await get_or_create_settings(db, current_user.tenant_id)
     
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    
     if data.institution_name is not None:
         settings.institution_name = data.institution_name
+        if tenant:
+            tenant.name = data.institution_name
+
     if data.institution_logo_url is not None:
         settings.institution_logo_url = data.institution_logo_url
+        if tenant:
+            tenant.logo_url = data.institution_logo_url
+
     if data.institution_address is not None:
         settings.institution_address = data.institution_address
     if data.institution_phone is not None:

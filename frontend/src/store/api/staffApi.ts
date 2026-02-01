@@ -106,6 +106,26 @@ export const staffApi = apiSlice.injectEndpoints({
             }),
             invalidatesTags: ['Staff'],
         }),
+        downloadStaffTemplate: builder.query<Blob, void>({
+            query: () => ({
+                url: '/staff/template',
+                responseHandler: (response) => response.blob(),
+            }),
+        }),
+        importStaff: builder.mutation<any, FormData>({
+            query: (formData) => ({
+                url: '/staff/import',
+                method: 'POST',
+                body: formData,
+            }),
+            invalidatesTags: ['Staff'],
+        }),
+        exportStaff: builder.query<Blob, void>({
+            query: () => ({
+                url: '/staff/export',
+                responseHandler: (response) => response.blob(),
+            }),
+        }),
     }),
 });
 
@@ -115,4 +135,7 @@ export const {
     useCreateStaffMutation,
     useUpdateStaffMutation,
     useDeleteStaffMutation,
+    useLazyDownloadStaffTemplateQuery,
+    useImportStaffMutation,
+    useLazyExportStaffQuery,
 } = staffApi;

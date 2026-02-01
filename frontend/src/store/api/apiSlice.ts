@@ -38,30 +38,54 @@ export const publicBaseQuery = fetchBaseQuery({
     },
 });
 
+// Mutex to prevent multiple refresh requests
+let refreshPromise: Promise<{ access_token: string } | null> | null = null;
+
 // Base query with token refresh logic
 const baseQueryWithReauth = async (args: any, api: any, extraOptions: any) => {
     let result = await baseQuery(args, api, extraOptions);
 
     if (result.error && result.error.status === 401) {
-        // Try to refresh the token using HttpOnly cookie
-        // Use publicBaseQuery to avoid sending the expired Access Token in Authorization header
-        const refreshResult = await publicBaseQuery(
-            {
-                url: '/auth/refresh',
-                method: 'POST',
-                body: {}, // Body is empty, token is in cookie
-            },
-            api,
-            extraOptions
-        );
+        if (!refreshPromise) {
+            console.log('Token expired, starting refresh...');
+            refreshPromise = (async () => {
+                try {
+                    const refreshResult = await publicBaseQuery(
+                        {
+                            url: '/auth/refresh',
+                            method: 'POST',
+                            body: {},
+                        },
+                        api,
+                        extraOptions
+                    );
 
-        if (refreshResult.data) {
-            const data = refreshResult.data as { access_token: string };
-            api.dispatch(updateAccessToken(data.access_token));
-            // Retry the original request
+                    if (refreshResult.data) {
+                        const data = refreshResult.data as { access_token: string };
+                        console.log('Token refreshed successfully');
+                        api.dispatch(updateAccessToken(data.access_token));
+                        return data;
+                    } else {
+                        console.log('Refresh failed, logging out');
+                        api.dispatch(logout());
+                        return null;
+                    }
+                } catch (e) {
+                    api.dispatch(logout());
+                    return null;
+                } finally {
+                    refreshPromise = null;
+                }
+            })();
+        }
+
+        await refreshPromise;
+
+        // After refresh (success or fail), retry. 
+        // Ideally checking if we have a token now.
+        const token = (api.getState() as RootState).auth.accessToken;
+        if (token) {
             result = await baseQuery(args, api, extraOptions);
-        } else {
-            api.dispatch(logout());
         }
     }
 

@@ -1,7 +1,7 @@
 """
 Timetable API routes.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -499,4 +499,64 @@ async def get_room_schedule(
     return TimetableEntryListResponse(
         items=[TimetableEntryResponse.model_validate(e) for e in entries],
         total=len(entries),
+    )
+
+
+# Import/Export Routes
+from fastapi import UploadFile, File
+from fastapi.responses import StreamingResponse
+from app.core.services.import_export_service import ImportExportService
+import io
+from datetime import date
+
+@router.get("/template", response_class=StreamingResponse)
+# @require_permission("timetable", "create") # Add permission appropriately
+async def get_timetable_import_template(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download timetable import template."""
+    service = ImportExportService(db)
+    content = service.get_timetable_import_template()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=timetable_import_template.csv"}
+    )
+
+@router.post("/import", status_code=status.HTTP_200_OK)
+# @require_permission("timetable", "create")
+async def import_timetable(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import timetable from CSV/Excel."""
+    service = ImportExportService(db)
+    content = await file.read()
+    
+    if file.filename.endswith(('.xlsx', '.xls')):
+        result = await service.import_timetable_from_excel(current_user.tenant_id, content)
+    else:
+        result = await service.import_timetable_from_csv(current_user.tenant_id, content)
+        
+    return result
+
+@router.get("/export", response_class=StreamingResponse)
+# @require_permission("timetable", "read")
+async def export_timetable(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export timetable to CSV."""
+    service = ImportExportService(db)
+    content = await service.export_timetable_to_csv(current_user.tenant_id)
+    
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=timetable_export_{date.today()}.csv"}
     )

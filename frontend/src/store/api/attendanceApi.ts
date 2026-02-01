@@ -72,6 +72,20 @@ export interface AttendanceUpdateRequest {
     remarks?: string;
 }
 
+export interface StudentAttendanceHistory {
+    student_id: string;
+    student_name: string;
+    admission_number: string;
+    roll_number?: string;
+    attendance: Record<string, { status: string; remarks?: string }>;
+}
+
+export interface AttendanceHistoryResponse {
+    start_date: string;
+    end_date: string;
+    students: StudentAttendanceHistory[];
+}
+
 // Inject endpoints into the centralized apiSlice
 export const attendanceApi = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
@@ -86,6 +100,18 @@ export const attendanceApi = apiSlice.injectEndpoints({
                 if (section) params.append('section', section);
                 if (status) params.append('status', status);
                 return `/attendance?${params.toString()}`;
+            },
+            providesTags: ['Academic'],
+        }),
+        getAttendanceHistory: builder.query<AttendanceHistoryResponse, { startDate: string; endDate: string; course: string; section: string; classId?: string }>({
+            query: ({ startDate, endDate, course, section, classId }) => {
+                const params = new URLSearchParams();
+                params.append('start_date', startDate);
+                params.append('end_date', endDate);
+                params.append('course', course);
+                params.append('section', section);
+                if (classId) params.append('class_id', classId);
+                return `/attendance/history?${params.toString()}`;
             },
             providesTags: ['Academic'],
         }),
@@ -135,6 +161,7 @@ export const attendanceApi = apiSlice.injectEndpoints({
 
 export const {
     useGetAttendanceQuery,
+    useGetAttendanceHistoryQuery,
     useGetAttendanceSummaryQuery,
     useCreateAttendanceMutation,
     useCreateBulkAttendanceMutation,

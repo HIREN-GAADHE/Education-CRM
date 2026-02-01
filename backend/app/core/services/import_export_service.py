@@ -15,6 +15,8 @@ from app.models.staff import Staff
 from app.models.fee import FeePayment, FeeType, PaymentStatus
 from app.models.attendance import Attendance
 from app.models.academic import SchoolClass
+from app.models.staff import Staff, StaffStatus, StaffType, Gender
+from app.models.timetable import TimetableEntry, TimeSlot, Room, DayOfWeek, TimetableStatus, TimetableConflict
 
 logger = logging.getLogger(__name__)
 
@@ -782,6 +784,555 @@ class ImportExportService:
                 r.status.value if hasattr(r.status, 'value') else str(r.status),
                 r.remarks or "",
                 str(r.recorded_by) if r.recorded_by else ""
+            ])
+            
+        return output.getvalue().encode('utf-8')
+
+    # ============== Staff Import/Export ==============
+
+    # ============== Staff Import/Export ==============
+
+    def get_staff_import_template(self) -> bytes:
+        """Generate CSV template for staff import."""
+        headers = [
+            "first_name", "last_name", "email", "phone", "employee_id", 
+            "staff_type", "designation", "department", "qualification", 
+            "joining_date", "gender", "date_of_birth", "address", "city", "state",
+            "classes" # Comma separated Class Name-Section (e.g. "10-A, 9-B")
+        ]
+        sample = [
+            "John", "Smith", "john.smith@school.com", "+919876543210", "EMP001",
+            "teaching", "Senior Teacher", "Science", "M.Sc. Physics",
+            "2023-06-01", "male", "1985-05-15", "123 Teacher Colony", "Mumbai", "Maharashtra",
+            "10-A, 9-B"
+        ]
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerow(sample)
+        return output.getvalue().encode('utf-8')
+
+    async def import_staff_from_csv(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        """Import staff from CSV."""
+        return await self._import_staff_generic(tenant_id, file_content.decode('utf-8'), is_csv=True)
+
+    async def import_staff_from_excel(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        """Import staff from Excel."""
+        if not self.has_pandas:
+            raise RuntimeError("pandas is required for Excel import")
+        import pandas as pd
+        df = pd.read_excel(BytesIO(file_content))
+        # Convert to CSV-like structure for generic processing
+        return await self._import_staff_generic(tenant_id, df, is_csv=False)
+
+    async def _import_staff_generic(self, tenant_id: str, data: Any, is_csv: bool) -> Dict[str, Any]:
+        """Generic staff import logic."""
+        results = {"total_rows": 0, "imported": 0, "errors": []}
+        
+        try:
+            # Pre-load classes for resolution
+            class_result = await self.db.execute(
+                select(SchoolClass).where(
+                    SchoolClass.tenant_id == tenant_id, 
+                    SchoolClass.is_deleted == False
+                )
+            )
+            all_classes = class_result.scalars().all()
+
+            rows = []
+            if is_csv:
+                io_obj = StringIO(data)
+                reader = csv.DictReader(io_obj)
+                # Normalize headers
+                if reader.fieldnames:
+                    reader.fieldnames = [h.strip().lower().replace(' ', '_') for h in reader.fieldnames]
+                rows = list(reader)
+            else:
+                # Pandas DataFrame
+                data.columns = [str(col).strip().lower().replace(" ", "_") for col in data.columns]
+                rows = data.to_dict('records')
+
+            results["total_rows"] = len(rows)
+
+            for idx, row in enumerate(rows):
+                row_num = idx + 2
+                try:
+                    # Clean data
+                    row = {k: str(v).strip() if v is not None else "" for k, v in row.items()}
+                    
+                    if not row.get("first_name") or not row.get("email"):
+                        results["errors"].append({"row": row_num, "error": "first_name and email are required"})
+                        continue
+
+                    # Check existence
+                    existing = await self.db.execute(select(Staff).where(
+                        Staff.tenant_id == tenant_id,
+                        (Staff.email == row["email"]) | (Staff.employee_id == row.get("employee_id"))
+                    ))
+                    existing_staff = existing.scalars().first()
+                    
+                    if existing_staff:
+                         # For now, skip duplicates. Could add update mode later.
+                        results["errors"].append({"row": row_num, "error": f"Staff with email {row['email']} or ID {row.get('employee_id')} already exists"})
+                        continue
+
+                    # Map Enums
+                    staff_type = StaffType.TEACHING
+                    if row.get("staff_type"):
+                        try:
+                            # Try to match enum values (teaching, non_teaching, etc.)
+                            val = row["staff_type"].lower().replace(' ', '_')
+                            # Check if valid
+                            if val in [e.value for e in StaffType]:
+                                staff_type = StaffType(val)
+                        except ValueError:
+                            pass # Default to teaching
+
+                    gender = None
+                    if row.get("gender"):
+                        try:
+                            val = row["gender"].lower()
+                            if val in [e.value for e in Gender]:
+                                gender = Gender(val)
+                        except ValueError:
+                            pass
+
+                    # Dates
+                    joining_date = None
+                    if row.get("joining_date"):
+                        try:
+                            joining_date = datetime.strptime(row["joining_date"], "%Y-%m-%d").date()
+                        except:
+                            pass
+                            
+                    dob = None
+                    if row.get("date_of_birth"):
+                        try:
+                            dob = datetime.strptime(row["date_of_birth"], "%Y-%m-%d").date()
+                        except:
+                            pass
+
+                    staff = Staff(
+                        tenant_id=tenant_id,
+                        first_name=row["first_name"],
+                        last_name=row.get("last_name"),
+                        email=row["email"],
+                        phone=row.get("phone"),
+                        employee_id=row.get("employee_id") or f"EMP-{uuid.uuid4().hex[:6].upper()}",
+                        staff_type=staff_type,
+                        designation=row.get("designation"),
+                        department=row.get("department"),
+                        qualification=row.get("qualification"),
+                        joining_date=joining_date,
+                        date_of_birth=dob,
+                        gender=gender,
+                        address=row.get("address"),
+                        city=row.get("city"),
+                        state=row.get("state"),
+                        status=StaffStatus.ACTIVE
+                    )
+                    
+                    # Handle Classes
+                    if row.get("classes"):
+                        # specific format: "Class 10-A, Class 9-B" or just "10-A, 9-B"
+                        # We try to split by comma and match name-section
+                        class_strs = [c.strip() for c in row["classes"].split(',') if c.strip()]
+                        valid_classes = []
+                        for c_str in class_strs:
+                            # Try splitting by last hyphen for name-section
+                            parts = c_str.rsplit('-', 1)
+                            if len(parts) == 2:
+                                c_name, c_sec = parts[0].strip(), parts[1].strip()
+                                # Find match
+                                match = next((c for c in all_classes if c.name.lower() == c_name.lower() and c.section.lower() == c_sec.lower()), None)
+                                if match:
+                                    valid_classes.append(match)
+                        
+                        if valid_classes:
+                            staff.associated_classes = valid_classes
+                            
+                    self.db.add(staff)
+                    results["imported"] += 1
+
+                except Exception as e:
+                    results["errors"].append({"row": row_num, "error": str(e)})
+
+            await self.db.commit()
+
+        except Exception as e:
+            logger.error(f"Staff import failed: {e}")
+            results["errors"].append({"row": 0, "error": str(e)})
+
+        return results
+
+    async def export_staff_to_csv(self, tenant_id: str) -> bytes:
+        # Eager load associated classes
+        from sqlalchemy.orm import selectinload
+        result = await self.db.execute(
+            select(Staff)
+            .options(selectinload(Staff.associated_classes))
+            .where(Staff.tenant_id == tenant_id)
+        )
+        staff_list = result.scalars().all()
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        headers = [
+            "first_name", "last_name", "email", "phone", "employee_id", 
+            "staff_type", "designation", "department", "qualification", 
+            "joining_date", "gender", "date_of_birth", "address", "city", "state",
+            "classes", "status"
+        ]
+        writer.writerow(headers)
+        
+        for s in staff_list:
+            # Format classes
+            classes_str = ""
+            if s.associated_classes:
+                classes_str = ", ".join([f"{c.name}-{c.section}" for c in s.associated_classes])
+                
+            writer.writerow([
+                s.first_name,
+                s.last_name or "",
+                s.email or "",
+                s.phone or "",
+                s.employee_id,
+                s.staff_type.value if s.staff_type else "",
+                s.designation or "",
+                s.department or "",
+                s.qualification or "",
+                s.joining_date.strftime("%Y-%m-%d") if s.joining_date else "",
+                s.gender.value if s.gender else "",
+                s.date_of_birth.strftime("%Y-%m-%d") if s.date_of_birth else "",
+                s.address or "",
+                s.city or "",
+                s.state or "",
+                classes_str,
+                s.status.value
+            ])
+        return output.getvalue().encode('utf-8')
+
+    # ============== Timetable Import/Export ==============
+
+    def get_timetable_import_template(self) -> bytes:
+        headers = [
+            "day", "start_time", "end_time", "class", "section", 
+            "subject", "teacher_email_or_id", "room", "slot_type"
+        ]
+        sample = [
+            "Monday", "09:00", "10:00", "10", "A", 
+            "Mathematics", "john.smith@school.com", "Room 101", "class"
+        ]
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerow(sample)
+        return output.getvalue().encode('utf-8')
+
+    async def import_timetable_from_csv(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        return await self._import_timetable_generic(tenant_id, file_content.decode('utf-8'), is_csv=True)
+
+    async def import_timetable_from_excel(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        if not self.has_pandas:
+            raise RuntimeError("pandas required")
+        import pandas as pd
+        df = pd.read_excel(BytesIO(file_content))
+        return await self._import_timetable_generic(tenant_id, df, is_csv=False)
+
+    async def _import_timetable_generic(self, tenant_id: str, data: Any, is_csv: bool) -> Dict[str, Any]:
+        results = {"total_rows": 0, "imported": 0, "errors": []}
+        
+        # Helper: Get DayOfWeek
+        day_map = {d.name.lower(): d for d in DayOfWeek}
+        
+        try:
+            # Load required data for lookups
+            staff_result = await self.db.execute(select(Staff).where(Staff.tenant_id == tenant_id))
+            staff_list = staff_result.scalars().all()
+            staff_map = {s.email: s.id for s in staff_list if s.email}
+            staff_map.update({s.employee_id: s.id for s in staff_list if s.employee_id}) # Allow lookup by ID too
+            
+            # Rooms setup (optional lookup if strict validation needed, else create/use string)
+            # For now we'll fetch rooms to map if possible, but TimetableEntry uses room_id
+            room_result = await self.db.execute(select(Room).where(Room.tenant_id == tenant_id))
+            rooms = room_result.scalars().all()
+            room_map = {r.name.lower(): r.id for r in rooms}
+
+            rows = []
+            if is_csv:
+                reader = csv.DictReader(StringIO(data))
+                if reader.fieldnames:
+                    reader.fieldnames = [h.strip().lower().replace(' ', '_') for h in reader.fieldnames]
+                rows = list(reader)
+            else:
+                data.columns = [str(c).strip().lower().replace(' ', '_') for c in data.columns]
+                rows = data.to_dict('records')
+
+            results["total_rows"] = len(rows)
+
+            for idx, row in enumerate(rows):
+                row_num = idx + 2
+                try:
+                    row = {k: str(v).strip() for k, v in row.items() if v is not None}
+                    
+                    if not row.get("day") or not row.get("start_time"):
+                        results["errors"].append({"row": row_num, "error": "Day and Start Time required"})
+                        continue
+
+                    # Parse Day
+                    day_enum = day_map.get(row["day"].lower())
+                    if not day_enum:
+                         results["errors"].append({"row": row_num, "error": f"Invalid day: {row['day']}"})
+                         continue
+
+                    # Parse/Find TimeSlot - Complex: Using start/end time to find or create slot
+                    # Strategy: Try to find existing slot by start/end time. If not, create? 
+                    # Simpler strategy: Use TimeSlot if it exists, else we need logic.
+                    # For bulk import, let's look up TimeSlot by start/end.
+                    try:
+                        st = datetime.strptime(row["start_time"], "%H:%M").time()
+                        et = datetime.strptime(row["end_time"], "%H:%M").time()
+                    except ValueError:
+                        results["errors"].append({"row": row_num, "error": "Invalid time format (HH:MM)"})
+                        continue
+
+                    slot_q = select(TimeSlot).where(
+                        TimeSlot.tenant_id == tenant_id,
+                        TimeSlot.start_time == st,
+                        TimeSlot.end_time == et
+                    )
+                    slot = (await self.db.execute(slot_q)).scalars().first()
+                    
+                    if not slot:
+                        # Auto-create slot?
+                        slot = TimeSlot(
+                            tenant_id=tenant_id,
+                            name=f"{row['start_time']}-{row['end_time']}",
+                            start_time=st,
+                            end_time=et
+                        )
+                        self.db.add(slot)
+                        await self.db.flush()
+
+                    # Teacher
+                    teacher_id = None
+                    t_identifier = row.get("teacher_email_or_id")
+                    if t_identifier:
+                        teacher_id = staff_map.get(t_identifier) or staff_map.get(t_identifier.lower()) # check case-insensitive maybe?
+                    
+                    # Room
+                    room_id = None
+                    if row.get("room"):
+                        room_id = room_map.get(row["room"].lower())
+
+                    entry = TimetableEntry(
+                        tenant_id=tenant_id,
+                        time_slot_id=slot.id,
+                        day_of_week=day_enum,
+                        class_name=row.get("class"),
+                        section=row.get("section"),
+                        subject_name=row.get("subject"),
+                        teacher_id=teacher_id,
+                        room_id=room_id,
+                        status=TimetableStatus.ACTIVE
+                    )
+                    self.db.add(entry)
+                    results["imported"] += 1
+
+                except Exception as e:
+                     results["errors"].append({"row": row_num, "error": str(e)})
+
+            await self.db.commit()
+
+        except Exception as e:
+            logger.error(f"Timetable import failed: {e}")
+            results["errors"].append({"row": 0, "error": str(e)})
+            
+        return results
+
+    async def export_timetable_to_csv(self, tenant_id: str) -> bytes:
+        # Simple flat export
+        query = select(TimetableEntry).where(TimetableEntry.tenant_id == tenant_id).order_by(TimetableEntry.day_of_week, TimetableEntry.time_slot_id)
+        entries = (await self.db.execute(query)).scalars().all()
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        headers = ["Day", "Time Slot", "Class", "Section", "Subject", "Teacher", "Room"]
+        writer.writerow(headers)
+        
+        for e in entries:
+            # Need to lazy load or joined load relations for efficient export, doing simplified here
+            # Assuming relations might not be loaded, using IDs or safe access if loaded
+            # Real prod code should use joinedload in query
+            writer.writerow([
+                e.day_of_week.name.title(),
+                f"{e.time_slot.start_time.strftime('%H:%M')}-{e.time_slot.end_time.strftime('%H:%M')}" if e.time_slot else "",
+                e.class_name or "",
+                e.section or "",
+                e.subject_name or "",
+                str(e.teacher_id) if e.teacher_id else "", # ideally resolve name
+                str(e.room_id) if e.room_id else ""
+            ])
+            
+        return output.getvalue().encode('utf-8')
+
+    # ============== Classes Import/Export ==============
+
+    def get_classes_import_template(self) -> bytes:
+        """Generate CSV template for classes import."""
+        headers = ["name", "section", "capacity", "class_teacher_email"]
+        sample = ["10", "A", "40", "teacher@example.com"]
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerow(sample)
+        return output.getvalue().encode('utf-8')
+
+    async def import_classes_from_csv(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        """Import classes from CSV."""
+        return await self._import_classes_generic(tenant_id, file_content.decode('utf-8'), is_csv=True)
+
+    async def import_classes_from_excel(self, tenant_id: str, file_content: bytes) -> Dict[str, Any]:
+        """Import classes from Excel."""
+        if not self.has_pandas:
+            raise RuntimeError("pandas is required for Excel import")
+        import pandas as pd
+        df = pd.read_excel(BytesIO(file_content))
+        return await self._import_classes_generic(tenant_id, df, is_csv=False)
+
+    async def _import_classes_generic(self, tenant_id: str, data: Any, is_csv: bool) -> Dict[str, Any]:
+        """Generic classes import logic."""
+        results = {"total_rows": 0, "imported": 0, "errors": []}
+        
+        try:
+            # Pre-load existing classes
+            existing_classes_result = await self.db.execute(
+                select(SchoolClass).where(
+                    SchoolClass.tenant_id == tenant_id,
+                    SchoolClass.is_deleted == False
+                )
+            )
+            existing_classes = {(c.name.lower(), c.section.lower()) for c in existing_classes_result.scalars().all()}
+            
+            # Pre-load staff for teacher lookup
+            staff_result = await self.db.execute(
+                select(Staff).where(Staff.tenant_id == tenant_id)
+            )
+            staff_map = {s.email.lower(): s.id for s in staff_result.scalars().all() if s.email}
+
+            rows = []
+            if is_csv:
+                io_obj = StringIO(data)
+                reader = csv.DictReader(io_obj)
+                if reader.fieldnames:
+                    reader.fieldnames = [h.strip().lower().replace(' ', '_') for h in reader.fieldnames]
+                rows = list(reader)
+            else:
+                data.columns = [str(col).strip().lower().replace(" ", "_") for col in data.columns]
+                rows = data.to_dict('records')
+            
+            results["total_rows"] = len(rows)
+            
+            for idx, row in enumerate(rows):
+                row_num = idx + 2
+                try:
+                    row = {k: str(v).strip() if v is not None else "" for k, v in row.items()}
+                    
+                    if not row.get("name") or not row.get("section"):
+                        results["errors"].append({"row": row_num, "error": "name and section are required"})
+                        continue
+                        
+                    # Check uniqueness
+                    if (row["name"].lower(), row["section"].lower()) in existing_classes:
+                        results["errors"].append({"row": row_num, "error": f"Class {row['name']}-{row['section']} already exists"})
+                        continue
+                    
+                    # Teacher Lookup
+                    class_teacher_id = None
+                    if row.get("class_teacher_email"):
+                        class_teacher_id = staff_map.get(row["class_teacher_email"].lower())
+                        if not class_teacher_id:
+                             # Warning but continue
+                             pass
+
+                    # Capacity
+                    capacity = 40
+                    if row.get("capacity"):
+                        try:
+                            capacity = int(float(row["capacity"]))
+                        except ValueError:
+                            results["errors"].append({"row": row_num, "error": "Capacity must be a number"})
+                            continue
+
+                    new_class = SchoolClass(
+                        tenant_id=tenant_id,
+                        name=row["name"],
+                        section=row["section"],
+                        capacity=capacity,
+                        class_teacher_id=class_teacher_id
+                    )
+                    self.db.add(new_class)
+                    # Add to local set to catch duplicates within the file
+                    existing_classes.add((row["name"].lower(), row["section"].lower()))
+                    results["imported"] += 1
+                    
+                except Exception as e:
+                    results["errors"].append({"row": row_num, "error": str(e)})
+                    
+            await self.db.commit()
+            
+        except Exception as e:
+            logger.error(f"Classes import failed: {e}")
+            results["errors"].append({"row": 0, "error": str(e)})
+            
+        return results
+
+    async def export_classes_to_csv(self, tenant_id: str) -> bytes:
+        """Export classes to CSV."""
+        from sqlalchemy.orm import selectinload
+        # Eager load class teacher
+        result = await self.db.execute(
+            select(SchoolClass)
+            .options(selectinload(SchoolClass.class_teacher))
+            .where(SchoolClass.tenant_id == tenant_id, SchoolClass.is_deleted == False)
+            .order_by(SchoolClass.name, SchoolClass.section)
+        )
+        classes = result.scalars().all()
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["name", "section", "capacity", "class_teacher_name", "class_teacher_email", "student_count"])
+        
+        # We need student counts efficiently. For now, doing separate query or ignoring. 
+        # Plan said query all classes.
+        # Let's get checks.
+        
+        # Optimization: Fetch counts in one go
+        count_stmt = select(
+            Student.class_id,
+            func.count(Student.id).label('count')
+        ).where(
+            Student.tenant_id == tenant_id,
+            Student.is_deleted == False
+        ).group_by(Student.class_id)
+        count_result = await self.db.execute(count_stmt)
+        counts = {str(row.class_id): row.count for row in count_result.all()}
+        
+        for c in classes:
+            teacher_name = c.class_teacher.full_name if c.class_teacher else ""
+            teacher_email = c.class_teacher.email if c.class_teacher else ""
+            count = counts.get(str(c.id), 0)
+            
+            writer.writerow([
+                c.name,
+                c.section,
+                c.capacity,
+                teacher_name,
+                teacher_email,
+                count
             ])
             
         return output.getvalue().encode('utf-8')

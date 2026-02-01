@@ -127,7 +127,14 @@ async def create_event(
 ):
     """Create a new calendar event."""
     try:
-        event = CalendarEvent(**event_data.model_dump())
+        data = event_data.model_dump()
+        # Remove timezone info for naive storage
+        if data.get('start_datetime'):
+            data['start_datetime'] = data['start_datetime'].replace(tzinfo=None)
+        if data.get('end_datetime'):
+            data['end_datetime'] = data['end_datetime'].replace(tzinfo=None)
+            
+        event = CalendarEvent(**data)
         event.tenant_id = current_user.tenant_id
         
         db.add(event)
@@ -185,6 +192,11 @@ async def update_event(
         raise HTTPException(status_code=404, detail="Event not found")
     
     update_data = event_data.model_dump(exclude_unset=True)
+    if update_data.get('start_datetime'):
+        update_data['start_datetime'] = update_data['start_datetime'].replace(tzinfo=None)
+    if update_data.get('end_datetime'):
+        update_data['end_datetime'] = update_data['end_datetime'].replace(tzinfo=None)
+        
     for field, value in update_data.items():
         setattr(event, field, value)
     

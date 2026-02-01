@@ -68,7 +68,8 @@ class TokenService:
         roles: List[str],
         permissions: List[str],
         role_level: int = 99,
-        additional_claims: Optional[dict] = None
+        additional_claims: Optional[dict] = None,
+        expires_minutes: Optional[int] = None
     ) -> str:
         """
         Create a new access token.
@@ -80,12 +81,13 @@ class TokenService:
             permissions: List of permission codes
             role_level: User's highest privilege level (0=Super Admin, 4=User)
             additional_claims: Optional additional JWT claims
-        
-        Returns:
-            Encoded JWT token
+            expires_minutes: Optional custom expiration in minutes
         """
         now = datetime.utcnow()
-        expire = now + self.access_token_expires
+        if expires_minutes:
+            expire = now + timedelta(minutes=expires_minutes)
+        else:
+            expire = now + self.access_token_expires
         
         payload = {
             "sub": str(user_id),

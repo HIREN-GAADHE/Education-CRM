@@ -24,11 +24,11 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
 # Pydantic Schemas
 class AttendanceBase(BaseModel):
-    attendance_type: str  # student or staff
+    attendance_type: AttendanceType  # student or staff
     student_id: Optional[UUID] = None
     staff_id: Optional[UUID] = None
     attendance_date: date
-    status: str = "present"
+    status: AttendanceStatus = AttendanceStatus.PRESENT
     check_in_time: Optional[time] = None
     check_out_time: Optional[time] = None
     course: Optional[str] = None
@@ -50,7 +50,7 @@ class BulkAttendanceCreate(BaseModel):
 
 
 class AttendanceUpdate(BaseModel):
-    status: Optional[str] = None
+    status: Optional[AttendanceStatus] = None
     check_in_time: Optional[time] = None
     check_out_time: Optional[time] = None
     remarks: Optional[str] = None
@@ -182,7 +182,7 @@ async def get_attendance_summary(
     try:
         query = select(Attendance).where(
             Attendance.attendance_date == attendance_date,
-            Attendance.attendance_type == "student",
+            Attendance.attendance_type == AttendanceType.STUDENT,
             Attendance.tenant_id == current_user.tenant_id,  # Tenant isolation
             Attendance.is_deleted == False  # Exclude soft-deleted records
         )
@@ -195,11 +195,11 @@ async def get_attendance_summary(
         result = await db.execute(query)
         records = result.scalars().all()
         
-        present = sum(1 for r in records if r.status == "present")
-        absent = sum(1 for r in records if r.status == "absent")
-        late = sum(1 for r in records if r.status == "late")
-        half_day = sum(1 for r in records if r.status == "half_day")
-        on_leave = sum(1 for r in records if r.status == "on_leave")
+        present = sum(1 for r in records if r.status == AttendanceStatus.PRESENT)
+        absent = sum(1 for r in records if r.status == AttendanceStatus.ABSENT)
+        late = sum(1 for r in records if r.status == AttendanceStatus.LATE)
+        half_day = sum(1 for r in records if r.status == AttendanceStatus.HALF_DAY)
+        on_leave = sum(1 for r in records if r.status == AttendanceStatus.ON_LEAVE)
         
         return AttendanceSummary(
             total_students=len(records),
@@ -278,7 +278,7 @@ async def create_bulk_attendance(
             
             if existing_record:
                 # Update existing record
-                existing_record.status = record.get("status", "present")
+                existing_record.status = AttendanceStatus(record.get("status", "present"))
                 existing_record.remarks = record.get("remarks")
                 existing_record.course = bulk_data.course or existing_record.course
                 existing_record.section = bulk_data.section or existing_record.section
@@ -287,10 +287,10 @@ async def create_bulk_attendance(
             else:
                 # Create new record
                 attendance = Attendance(
-                    attendance_type="student",
+                    attendance_type=AttendanceType.STUDENT,
                     student_id=record.get("student_id"),
                     attendance_date=bulk_data.attendance_date,
-                    status=record.get("status", "present"),
+                    status=AttendanceStatus(record.get("status", "present")),
                     course=bulk_data.course,
                     section=bulk_data.section,
                     subject=bulk_data.subject,
@@ -377,3 +377,100 @@ async def delete_attendance(
         await db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while deleting attendance")
 
+class StudentAttendanceHistory(BaseModel):
+    student_id: UUID
+    student_name: str
+    admission_number: str
+    roll_number: Optional[str] = None
+    attendance: dict[str, dict]  # date: {status, remarks}
+
+
+class AttendanceHistoryResponse(BaseModel):
+    start_date: date
+    end_date: date
+    students: List[StudentAttendanceHistory]
+
+
+@router.get("/history", response_model=AttendanceHistoryResponse)
+@require_permission("attendance", "read")
+async def get_attendance_history(
+    request: Request,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    course: str = Query(...),
+    section: str = Query(...),
+    class_id: Optional[UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get attendance history for a class within a date range."""
+    # 1. Fetch all students in the class
+    stmt = select(Student).where(
+        Student.tenant_id == current_user.tenant_id,
+        Student.status == "active",
+        Student.is_deleted == False
+    )
+
+    if class_id:
+        stmt = stmt.where(Student.class_id == class_id)
+    else:
+        stmt = stmt.where(
+            Student.course == course,
+            Student.section == section
+        )
+    
+    stmt = stmt.order_by(Student.roll_number, Student.first_name)
+    
+    students_result = await db.execute(stmt)
+    students = students_result.scalars().all()
+    
+    if not students:
+        return AttendanceHistoryResponse(
+            start_date=start_date,
+            end_date=end_date,
+            students=[]
+        )
+    
+    # 2. Fetch all attendance records for this class in range
+    att_stmt = select(Attendance).where(
+        Attendance.tenant_id == current_user.tenant_id,
+        Attendance.course == course,
+        Attendance.section == section,
+        Attendance.attendance_date >= start_date,
+        Attendance.attendance_date <= end_date,
+        Attendance.is_deleted == False
+    )
+    
+    att_result = await db.execute(att_stmt)
+    records = att_result.scalars().all()
+    
+    # 3. Build the map
+    # student_id -> date -> record
+    history_map = {}
+    for record in records:
+        sid = str(record.student_id)
+        if sid not in history_map:
+            history_map[sid] = {}
+        
+        history_map[sid][record.attendance_date.isoformat()] = {
+            "status": record.status.value,
+            "remarks": record.remarks
+        }
+    
+    # 4. Construct response
+    history_list = []
+    for student in students:
+        sid = str(student.id)
+        history_list.append(StudentAttendanceHistory(
+            student_id=student.id,
+            student_name=f"{student.first_name} {student.last_name}",
+            admission_number=student.admission_number,
+            roll_number=student.roll_number,
+            attendance=history_map.get(sid, {})
+        ))
+    
+    return AttendanceHistoryResponse(
+        start_date=start_date,
+        end_date=end_date,
+        students=history_list
+    )

@@ -16,7 +16,7 @@ from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.student import Student
 from app.models.staff import Staff
-from app.models.fee import FeePayment
+from app.models.fee import FeePayment, PaymentStatus
 from app.models.message import Message
 from app.models.attendance import Attendance, AttendanceStatus
 from app.models.timetable import TimetableEntry, TimeSlot
@@ -143,10 +143,10 @@ async def get_dashboard_data(
     try:
         current_month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         result = await db.execute(
-            select(func.coalesce(func.sum(FeePayment.amount_paid), 0)).where(
+            select(func.coalesce(func.sum(FeePayment.paid_amount), 0)).where(
                 and_(
                     FeePayment.tenant_id == tenant_id,
-                    FeePayment.status == 'paid',
+                    FeePayment.status == PaymentStatus.COMPLETED,
                     FeePayment.payment_date >= current_month_start
                 )
             )
@@ -189,7 +189,7 @@ async def get_dashboard_data(
             .where(
                 and_(
                     FeePayment.tenant_id == tenant_id,
-                    FeePayment.status == 'paid'
+                    FeePayment.status == PaymentStatus.COMPLETED
                 )
             )
             .order_by(FeePayment.payment_date.desc())
@@ -199,7 +199,7 @@ async def get_dashboard_data(
         recent_payments = [
             {
                 "id": str(p.id),
-                "amount": float(p.amount_paid or 0),
+                "amount": float(p.paid_amount or 0),
                 "date": p.payment_date.isoformat() if p.payment_date else None,
                 "student_name": f"{p.student.first_name} {p.student.last_name}" if p.student else "Unknown",
             }

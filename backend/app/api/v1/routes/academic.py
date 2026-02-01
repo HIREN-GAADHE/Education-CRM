@@ -1,9 +1,11 @@
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 from datetime import datetime
+import io
 
 from app.config import get_db
 from app.api.deps import get_current_user, get_current_tenant
@@ -14,6 +16,7 @@ from app.schemas import (
     SchoolClassResponse, 
     PaginatedResponse
 )
+from app.core.services.import_export_service import ImportExportService
 
 router = APIRouter()
 
@@ -115,6 +118,56 @@ async def list_school_classes(
         ))
     
     return response
+
+# Import/Export Routes - Must be before dynamic routes
+@router.get("/classes/template", response_class=StreamingResponse)
+async def get_classes_import_template(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    tenant=Depends(get_current_tenant)
+):
+    """Download classes import template."""
+    service = ImportExportService(db)
+    content = service.get_classes_import_template()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=classes_import_template.csv"}
+    )
+
+@router.post("/classes/import", status_code=status.HTTP_200_OK)
+async def import_classes(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    tenant=Depends(get_current_tenant)
+):
+    """Import classes from CSV/Excel."""
+    service = ImportExportService(db)
+    content = await file.read()
+    
+    if file.filename.endswith(('.xlsx', '.xls')):
+        result = await service.import_classes_from_excel(tenant.id, content)
+    else:
+        result = await service.import_classes_from_csv(tenant.id, content)
+        
+    return result
+
+@router.get("/classes/export", response_class=StreamingResponse)
+async def export_classes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    tenant=Depends(get_current_tenant)
+):
+    """Export classes to CSV."""
+    service = ImportExportService(db)
+    content = await service.export_classes_to_csv(tenant.id)
+    
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=classes_export_{datetime.now().date()}.csv"}
+    )
 
 @router.get("/classes/{class_id}", response_model=SchoolClassResponse)
 async def get_school_class(

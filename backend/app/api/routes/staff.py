@@ -1,9 +1,12 @@
 """
 Staff API Router - CRUD operations for staff/employees
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
+import io
+from app.core.services.import_export_service import ImportExportService
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from uuid import UUID
@@ -213,6 +216,61 @@ async def create_staff(
         raise HTTPException(status_code=500, detail="An error occurred")
 
 
+# Import/Export Routes
+
+@router.get("/template", response_class=StreamingResponse)
+@require_permission("staff", "create")
+async def get_staff_import_template(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download staff import template."""
+    service = ImportExportService(db)
+    content = service.get_staff_import_template()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=staff_import_template.csv"}
+    )
+
+@router.post("/import", status_code=status.HTTP_200_OK)
+@require_permission("staff", "create")
+async def import_staff(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Import staff from CSV/Excel."""
+    service = ImportExportService(db)
+    content = await file.read()
+    
+    if file.filename.endswith(('.xlsx', '.xls')):
+        result = await service.import_staff_from_excel(current_user.tenant_id, content)
+    else:
+        result = await service.import_staff_from_csv(current_user.tenant_id, content)
+        
+    return result
+
+@router.get("/export", response_class=StreamingResponse)
+@require_permission("staff", "read")
+async def export_staff(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export staff to CSV."""
+    service = ImportExportService(db)
+    content = await service.export_staff_to_csv(current_user.tenant_id)
+    
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=staff_export_{date.today()}.csv"}
+    )
+
+
 @router.get("/{staff_id}", response_model=StaffResponse)
 @require_permission("staff", "read")
 async def get_staff(
@@ -298,3 +356,5 @@ async def delete_staff(
     staff.deleted_by = current_user.id
     await db.commit()
     return None
+
+

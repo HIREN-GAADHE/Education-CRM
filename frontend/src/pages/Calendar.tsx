@@ -157,6 +157,8 @@ const CalendarPage: React.FC = () => {
         if (!data?.items) return [];
         return data.items.filter(event => {
             const eventDate = new Date(event.start_datetime);
+            // Debug matching
+            // console.log(`Checking ${event.title}: ${eventDate.toDateString()} === ${date.toDateString()}`);
             return eventDate.toDateString() === date.toDateString();
         });
     };

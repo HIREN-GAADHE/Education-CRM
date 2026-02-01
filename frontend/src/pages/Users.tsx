@@ -3,7 +3,8 @@ import {
     Box, Typography, Card, Avatar, Chip, Button, IconButton,
     TextField, InputAdornment, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions,
-    CircularProgress, Alert, MenuItem, Select, FormControl, InputLabel, Pagination
+    CircularProgress, Alert, MenuItem, Select, FormControl, InputLabel, Pagination,
+    Checkbox, ListItemText, Autocomplete
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -20,13 +21,13 @@ import {
     User
 } from '@/store/api/userApi';
 import { useGetRolesQuery } from '@/store/api/roleApi';
-import { useGetClassesQuery } from '@/store/api/academicApi';
+
 import { toast } from 'react-toastify';
 
 const UsersPage: React.FC = () => {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
-    const [classFilter, setClassFilter] = useState(''); // Added filter
+
     const [openDialog, setOpenDialog] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -42,15 +43,33 @@ const UsersPage: React.FC = () => {
         role_ids: [] as string[],
     });
 
+    const [passwordError, setPasswordError] = useState('');
+
+    const validatePassword = (password: string) => {
+        const errors = [];
+        if (password.length < 8) errors.push("Min 8 chars");
+        if (!/[A-Z]/.test(password)) errors.push("Uppercase");
+        if (!/[a-z]/.test(password)) errors.push("Lowercase");
+        if (!/\d/.test(password)) errors.push("Digit");
+        if (!/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) errors.push("Special char");
+
+        if (errors.length > 0) {
+            setPasswordError(`Missing: ${errors.join(', ')}`);
+            return false;
+        }
+        setPasswordError('');
+        return true;
+    };
+
     // API hooks
     const { data, isLoading, error, refetch } = useGetUsersQuery({
         page,
         pageSize: 10,
         search: search || undefined,
-        class_id: classFilter || undefined, // Apply filter
+
     });
     const { data: rolesData } = useGetRolesQuery();
-    const { data: classes } = useGetClassesQuery(); // Fetch classes
+
     const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
     const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation();
     const [deleteUser, { isLoading: isDeleting }] = useDeleteUserMutation();
@@ -148,21 +167,7 @@ const UsersPage: React.FC = () => {
                             ),
                         }}
                     />
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel>Class (Parents)</InputLabel>
-                        <Select
-                            value={classFilter}
-                            label="Class (Parents)"
-                            onChange={(e) => setClassFilter(e.target.value)}
-                        >
-                            <MenuItem value="">All Classes</MenuItem>
-                            {classes?.map((cls) => (
-                                <MenuItem key={cls.id} value={cls.id}>
-                                    {cls.name} - {cls.section}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+
                 </Box>
             </Card >
 
@@ -273,8 +278,14 @@ const UsersPage: React.FC = () => {
                                 label="Password"
                                 type="password"
                                 value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFormData({ ...formData, password: val });
+                                    validatePassword(val);
+                                }}
                                 required
+                                error={!!passwordError}
+                                helperText={passwordError || "Min 8 chars, uppercase, lowercase, digit, special char"}
                             />
                         )}
                         <TextField
@@ -309,35 +320,51 @@ const UsersPage: React.FC = () => {
                                 <MenuItem value="suspended">Suspended</MenuItem>
                             </Select>
                         </FormControl>
-                        <FormControl fullWidth>
-                            <InputLabel>Role</InputLabel>
-                            <Select
-                                multiple
-                                value={formData.role_ids}
-                                label="Role"
-                                onChange={(e) => setFormData({ ...formData, role_ids: e.target.value as string[] })}
-                            >
-                                {rolesData?.items.map(role => (
-                                    <MenuItem key={role.id} value={role.id}>{role.display_name}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                        <Autocomplete
+                            multiple
+                            options={rolesData?.items || []}
+                            getOptionLabel={(option) => option.display_name}
+                            value={rolesData?.items.filter(r => formData.role_ids.includes(r.id)) || []}
+                            onChange={(_, newValue) => {
+                                setFormData({
+                                    ...formData,
+                                    role_ids: newValue.map(r => r.id)
+                                });
+                            }}
+                            renderInput={(params) => (
+                                <TextField
+                                    {...params}
+                                    label="Role"
+                                    placeholder="Select Roles"
+                                />
+                            )}
+                            renderTags={(value, getTagProps) =>
+                                value.map((option, index) => (
+                                    <Chip
+                                        key={option.id} // Added key explicitly although getTagProps usually handles it, but good practice
+                                        label={option.display_name}
+                                        size="small"
+                                        {...getTagProps({ index })}
+                                    />
+                                ))
+                            }
+                        />
                     </Box>
-                </DialogContent>
+                </DialogContent >
                 <DialogActions sx={{ p: 2 }}>
                     <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
                     <Button
                         variant="contained"
                         onClick={handleSubmit}
-                        disabled={isCreating || isUpdating || !formData.email || !formData.first_name}
+                        disabled={isCreating || isUpdating || !formData.email || !formData.first_name || !!passwordError}
                     >
                         {isCreating || isUpdating ? <CircularProgress size={24} /> : editingUser ? 'Update' : 'Create'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </Dialog >
 
             {/* Delete Confirmation */}
-            <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}>
+            < Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}>
                 <DialogTitle>Confirm Delete</DialogTitle>
                 <DialogContent>
                     <Typography>Are you sure you want to delete this user?</Typography>
@@ -353,7 +380,7 @@ const UsersPage: React.FC = () => {
                         {isDeleting ? <CircularProgress size={24} /> : 'Delete'}
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </Dialog >
         </Box >
     );
 };

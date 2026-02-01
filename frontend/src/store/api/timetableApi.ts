@@ -324,6 +324,25 @@ export const timetableApi = apiSlice.injectEndpoints({
             },
             providesTags: ['Academic'],
         }),
+        downloadTimetableTemplate: builder.query<Blob, void>({
+            query: () => ({
+                url: '/timetable/template',
+                responseHandler: (response: Response) => response.blob(),
+            }),
+        }),
+        importTimetable: builder.mutation<any, FormData>({
+            query: (formData) => ({
+                url: '/timetable/import',
+                method: 'POST',
+                body: formData,
+            }),
+        }),
+        exportTimetable: builder.query<Blob, void>({
+            query: () => ({
+                url: '/timetable/export',
+                responseHandler: (response: Response) => response.blob(),
+            }),
+        }),
     }),
 });
 
@@ -344,4 +363,7 @@ export const {
     useCheckConflictsMutation,
     useGetTeacherScheduleQuery,
     useGetRoomScheduleQuery,
+    useLazyDownloadTimetableTemplateQuery,
+    useImportTimetableMutation,
+    useLazyExportTimetableQuery,
 } = timetableApi;

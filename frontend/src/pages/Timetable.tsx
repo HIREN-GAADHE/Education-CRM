@@ -14,7 +14,10 @@ import {
     Warning as WarningIcon,
     Delete as DeleteIcon,
     Edit as EditIcon,
-    DeleteSweep as DeleteSweepIcon
+    DeleteSweep as DeleteSweepIcon,
+    CloudUpload as CloudUploadIcon,
+    FileDownload as FileDownloadIcon,
+    Upload as UploadIcon,
 } from '@mui/icons-material';
 import {
     useGetTimeSlotsQuery,
@@ -33,7 +36,11 @@ import {
     TimetableEntry,
     TimeSlot,
     Room,
+    useImportTimetableMutation,
+    useLazyExportTimetableQuery,
+    useLazyDownloadTimetableTemplateQuery,
 } from '../store/api/timetableApi';
+import { toast } from 'react-toastify';
 import { useGetStaffQuery } from '../store/api/staffApi';
 import { useGetCoursesQuery } from '../store/api/courseApi';
 import { useGetClassesQuery } from '../store/api/academicApi';
@@ -62,6 +69,9 @@ const TimetablePage: React.FC = () => {
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
     const [selectedClassName, setSelectedClassName] = useState('');
     const [selectedSection, setSelectedSection] = useState('');
+    const [importDialog, setImportDialog] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importResult, setImportResult] = useState<any>(null);
 
     // Edit mode states
     const [editingEntry, setEditingEntry] = useState<TimetableEntry | null>(null);
@@ -89,6 +99,66 @@ const TimetablePage: React.FC = () => {
     const [deleteEntry] = useDeleteTimetableEntryMutation();
     const [deleteTimeSlot] = useDeleteTimeSlotMutation();
     const [deleteRoom] = useDeleteRoomMutation();
+    const [importTimetable, { isLoading: importingTimetable }] = useImportTimetableMutation();
+    const [triggerExport] = useLazyExportTimetableQuery();
+    const [triggerTemplate] = useLazyDownloadTimetableTemplateQuery();
+
+    const handleExport = async () => {
+        try {
+            const blob = await triggerExport().unwrap();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `timetable_export_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            toast.success('Export started successfully');
+        } catch (err) {
+            toast.error('Failed to export timetable');
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const blob = await triggerTemplate().unwrap();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'timetable_import_template.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            toast.error('Failed to download template');
+        }
+    };
+
+    const handleImport = async () => {
+        if (!importFile) return;
+        const formData = new FormData();
+        formData.append('file', importFile);
+
+        try {
+            const result = await importTimetable(formData).unwrap();
+            setImportResult(result);
+            if (result.errors?.length === 0) {
+                toast.success(`Successfully imported ${result.imported} entries`);
+                setTimeout(() => {
+                    setImportDialog(false);
+                    setImportResult(null);
+                    setImportFile(null);
+                    refetch();
+                }, 2000);
+            } else {
+                toast.warning(`Imported ${result.imported} with ${result.errors.length} errors`);
+            }
+        } catch (err: any) {
+            toast.error(err?.data?.detail || 'Import failed');
+        }
+    };
 
     // Entry form state
     const [entryForm, setEntryForm] = useState({
@@ -549,6 +619,16 @@ const TimetablePage: React.FC = () => {
                     Timetable Management
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Tooltip title="Import Timetable">
+                        <IconButton onClick={() => setImportDialog(true)} color="primary">
+                            <CloudUploadIcon />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Export Timetable">
+                        <IconButton onClick={handleExport} color="secondary">
+                            <FileDownloadIcon />
+                        </IconButton>
+                    </Tooltip>
                     <FormControl size="small" sx={{ minWidth: 150 }}>
                         <InputLabel>Class</InputLabel>
                         <Select value={selectedClassName} label="Class" onChange={(e) => setSelectedClassName(e.target.value)}>
@@ -727,6 +807,65 @@ const TimetablePage: React.FC = () => {
                     </Typography>
                 </TabPanel>
             </Paper>
+
+            {/* Import Dialog */}
+            <Dialog open={importDialog} onClose={() => setImportDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Import Timetable</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ textAlign: 'center', py: 3 }}>
+                        <Button startIcon={<FileDownloadIcon />} onClick={handleDownloadTemplate} sx={{ mb: 3 }}>
+                            Download Template
+                        </Button>
+
+                        <Box
+                            sx={{
+                                border: '2px dashed #ccc',
+                                borderRadius: 2,
+                                p: 4,
+                                cursor: 'pointer',
+                                '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' }
+                            }}
+                            component="label"
+                        >
+                            <input
+                                type="file"
+                                hidden
+                                accept=".csv, .xlsx, .xls"
+                                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                            />
+                            <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                            <Typography>{importFile ? importFile.name : 'Click to Upload CSV/Excel'}</Typography>
+                        </Box>
+
+                        {importResult && (
+                            <Box sx={{ mt: 2, textAlign: 'left' }}>
+                                <Alert severity={importResult.errors?.length ? 'warning' : 'success'}>
+                                    Imported: {importResult.imported}, Errors: {importResult.errors?.length || 0}
+                                </Alert>
+                                {importResult.errors?.length > 0 && (
+                                    <Box sx={{ mt: 1, maxHeight: 100, overflow: 'auto', bgcolor: 'grey.100', p: 1 }}>
+                                        {importResult.errors.map((e: any, i: number) => (
+                                            <Typography key={i} variant="caption" display="block" color="error">
+                                                Row {e.row}: {e.error}
+                                            </Typography>
+                                        ))}
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setImportDialog(false)}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={handleImport}
+                        disabled={!importFile || importingTimetable}
+                    >
+                        {importingTimetable ? <CircularProgress size={24} /> : 'Import'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Add/Edit Entry Dialog */}
             <Dialog open={entryDialogOpen} onClose={() => {

@@ -178,13 +178,19 @@ async def login(
         all_modules_result = await db.execute(select(Module.code))
         allowed_modules = [m.lower() for m in all_modules_result.scalars().all()]
     
+    # Get tenant settings for session timeout
+    from app.api.routes.settings import get_or_create_settings
+    tenant_settings = await get_or_create_settings(db, user.tenant_id)
+    session_minutes = tenant_settings.session_timeout_minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
     # Create tokens
     access_token = security.create_access_token(
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
         roles=roles,
         permissions=permissions,
-        role_level=role_level
+        role_level=role_level,
+        expires_minutes=session_minutes
     )
     
     refresh_token, token_hash, expires_at = security.create_refresh_token(
@@ -209,8 +215,8 @@ async def login(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,  # Set to True in Production
-        samesite="lax",
+        secure=settings.REFRESH_COOKIE_SECURE,
+        samesite=settings.REFRESH_COOKIE_SAMESITE,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # From settings
     )
     
@@ -218,7 +224,7 @@ async def login(
         access_token=access_token,
         # refresh_token=refresh_token, # Removed from body
         token_type="bearer",
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        expires_in=session_minutes * 60,
         user=UserBasic(
             id=str(user.id),
             email=user.email,
@@ -295,18 +301,24 @@ async def refresh_token(
     # Load roles and permissions from database
     roles, permissions, role_level = await get_user_roles_and_permissions(db, user.id)
     
+    # Get tenant settings for session timeout
+    from app.api.routes.settings import get_or_create_settings
+    tenant_settings = await get_or_create_settings(db, user.tenant_id)
+    session_minutes = tenant_settings.session_timeout_minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
     access_token = security.create_access_token(
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
         roles=roles,
         permissions=permissions,
-        role_level=role_level
+        role_level=role_level,
+        expires_minutes=session_minutes
     )
     
     return RefreshTokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=session_minutes * 60
     )
 
 

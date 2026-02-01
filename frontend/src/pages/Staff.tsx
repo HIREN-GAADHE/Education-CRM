@@ -12,12 +12,18 @@ import {
     Edit as EditIcon,
     Delete as DeleteIcon,
     Close as CloseIcon,
+    CloudUpload as CloudUploadIcon,
+    FileDownload as FileDownloadIcon,
+    Upload as UploadIcon,
 } from '@mui/icons-material';
 import {
     useGetStaffQuery,
     useCreateStaffMutation,
     useUpdateStaffMutation,
     useDeleteStaffMutation,
+    useImportStaffMutation,
+    useLazyExportStaffQuery,
+    useLazyDownloadStaffTemplateQuery,
 } from '@/store/api/staffApi';
 import type { Staff } from '@/store/api/staffApi';
 import { useGetClassesQuery } from '@/store/api/academicApi';
@@ -30,6 +36,9 @@ const StaffPage: React.FC = () => {
     const [openDialog, setOpenDialog] = useState(false);
     const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [importDialog, setImportDialog] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importResult, setImportResult] = useState<any>(null);
 
     const [formData, setFormData] = useState({
         employee_id: '',
@@ -57,6 +66,66 @@ const StaffPage: React.FC = () => {
     const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
     const [updateStaff, { isLoading: isUpdating }] = useUpdateStaffMutation();
     const [deleteStaff, { isLoading: isDeleting }] = useDeleteStaffMutation();
+    const [importStaff, { isLoading: isImporting }] = useImportStaffMutation();
+    const [triggerExport] = useLazyExportStaffQuery();
+    const [triggerTemplate] = useLazyDownloadStaffTemplateQuery();
+
+    const handleExport = async () => {
+        try {
+            const blob = await triggerExport().unwrap();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `staff_export_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            toast.success('Export started successfully');
+        } catch (err) {
+            toast.error('Failed to export staff');
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const blob = await triggerTemplate().unwrap();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'staff_import_template.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            toast.error('Failed to download template');
+        }
+    };
+
+    const handleImport = async () => {
+        if (!importFile) return;
+        const formData = new FormData();
+        formData.append('file', importFile);
+
+        try {
+            const result = await importStaff(formData).unwrap();
+            setImportResult(result);
+            if (result.errors?.length === 0) {
+                toast.success(`Successfully imported ${result.imported} staff members`);
+                setTimeout(() => {
+                    setImportDialog(false);
+                    setImportResult(null);
+                    setImportFile(null);
+                    refetch();
+                }, 2000);
+            } else {
+                toast.warning(`Imported ${result.imported} with ${result.errors.length} errors`);
+            }
+        } catch (err: any) {
+            toast.error(err?.data?.detail || 'Import failed');
+        }
+    };
 
     const handleOpenCreate = () => {
         setEditingStaff(null);
@@ -147,9 +216,29 @@ const StaffPage: React.FC = () => {
                         Manage teachers and administrative staff ({data?.total || 0} total)
                     </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} sx={{ borderRadius: 3 }}>
-                    Add Staff
-                </Button>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button
+                        startIcon={<CloudUploadIcon />}
+                        onClick={() => setImportDialog(true)}
+                        variant="outlined"
+                        color="primary"
+                        sx={{ borderRadius: 3 }}
+                    >
+                        Import
+                    </Button>
+                    <Button
+                        startIcon={<FileDownloadIcon />}
+                        onClick={handleExport}
+                        variant="outlined"
+                        color="secondary"
+                        sx={{ borderRadius: 3 }}
+                    >
+                        Export
+                    </Button>
+                    <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} sx={{ borderRadius: 3 }}>
+                        Add Staff
+                    </Button>
+                </Box>
             </Box>
 
             {/* Search */}
@@ -339,6 +428,75 @@ const StaffPage: React.FC = () => {
                     <Button onClick={() => setDeleteConfirm(null)}>Cancel</Button>
                     <Button color="error" variant="contained" onClick={() => deleteConfirm && handleDelete(deleteConfirm)} disabled={isDeleting}>
                         {isDeleting ? <CircularProgress size={24} /> : 'Delete'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            {/* Import Dialog */}
+            <Dialog open={importDialog} onClose={() => setImportDialog(false)}>
+                <DialogTitle>Import Staff</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                            1. Download the template CSV file.
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            startIcon={<FileDownloadIcon />}
+                            onClick={handleDownloadTemplate}
+                            size="small"
+                        >
+                            Download Template
+                        </Button>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                            2. Fill in the staff details.
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                            Supported columns: first_name, last_name, email, phone, classes (e.g. "10-A, 9-B"), etc.
+                        </Typography>
+                    </Box>
+                    <Box>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                            3. Upload the filled CSV file.
+                        </Typography>
+                        <Button
+                            component="label"
+                            variant="contained"
+                            startIcon={<CloudUploadIcon />}
+                            sx={{ mr: 2 }}
+                        >
+                            Select File
+                            <input
+                                type="file"
+                                hidden
+                                accept=".csv,.xlsx,.xls"
+                                onChange={(e) => setImportFile(e.target.files ? e.target.files[0] : null)}
+                            />
+                        </Button>
+                        {importFile && <Typography variant="caption">{importFile.name}</Typography>}
+                    </Box>
+                    {importResult && importResult.errors && importResult.errors.length > 0 && (
+                        <Box sx={{ mt: 2, maxHeight: 150, overflow: 'auto' }}>
+                            <Alert severity="warning">
+                                <Typography variant="subtitle2">Import Errors:</Typography>
+                                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                    {importResult.errors.map((e: any, i: number) => (
+                                        <li key={i}>Row {e.row}: {e.error}</li>
+                                    ))}
+                                </ul>
+                            </Alert>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setImportDialog(false)}>Cancel</Button>
+                    <Button
+                        onClick={handleImport}
+                        variant="contained"
+                        disabled={!importFile || isImporting}
+                    >
+                        {isImporting ? <CircularProgress size={24} /> : 'Upload & Import'}
                     </Button>
                 </DialogActions>
             </Dialog>

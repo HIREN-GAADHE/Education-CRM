@@ -1,5 +1,6 @@
 from typing import Optional
 from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import select
@@ -21,6 +22,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r"^/health/?$",
         r"^/favicon\.ico$",
 
+        # Auth endpoints (Prefixed)
         r"^/api/v1/auth/login/?$",
         r"^/api/v1/auth/register/?$",
         r"^/api/v1/auth/forgot-password/?$",
@@ -28,11 +30,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r"^/api/v1/auth/verify-email/?$",
         r"^/api/v1/auth/refresh/?$",
 
+        # Auth endpoints (Non-prefixed - for proxies stripping /api/v1)
+        r"^/auth/login/?$",
+        r"^/auth/register/?$",
+        r"^/auth/forgot-password/?$",
+        r"^/auth/reset-password/?$",
+        r"^/auth/verify-email/?$",
+        r"^/auth/refresh/?$",
+
+        # Tenant endpoints (Prefixed)
         r"^/api/v1/tenants/check-slug/?$",
         r"^/api/v1/tenants/public-info/?$",
         r"^/api/v1/tenants/.*/logo/?$",
 
+        # Tenant endpoints (Non-prefixed)
+        r"^/tenants/check-slug/?$",
+        r"^/tenants/public-info/?$",
+        r"^/tenants/.*/logo/?$",
+
         r"^/api/v1/health.*",
+        r"^/health.*",
 
         r"^/docs.*",
         r"^/redoc.*",
@@ -58,9 +75,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("Authorization")
 
         if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
+                content={"detail": "Missing or invalid authorization header"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -68,28 +85,30 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         payload = security.verify_access_token(token)
         if not payload:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired access token",
+                content={"detail": "Invalid or expired access token"},
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         user = await self._get_user(payload.get("sub"))
         if not user:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
+                content={"detail": "User not found"},
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         if not user.is_active:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is not active",
+                content={"detail": "User account is not active"},
             )
 
         if user.is_locked:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is locked",
+                content={"detail": "User account is locked"},
             )
 
         # Attach user context

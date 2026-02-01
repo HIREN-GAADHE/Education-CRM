@@ -34,6 +34,26 @@ export const academicApi = apiSlice.injectEndpoints({
             }),
             invalidatesTags: ['Academic'],
         }),
+        downloadClassTemplate: builder.query<Blob, void>({
+            query: () => ({
+                url: '/academic/classes/template',
+                responseHandler: (response) => response.blob(),
+            }),
+        }),
+        importClasses: builder.mutation<{ imported: number, errors: any[] }, FormData>({
+            query: (formData) => ({
+                url: '/academic/classes/import',
+                method: 'POST',
+                body: formData,
+            }),
+            invalidatesTags: ['Academic'],
+        }),
+        exportClasses: builder.query<Blob, void>({
+            query: () => ({
+                url: '/academic/classes/export',
+                responseHandler: (response) => response.blob(),
+            }),
+        }),
     }),
 });
 
@@ -43,4 +63,7 @@ export const {
     useCreateClassMutation,
     useUpdateClassMutation,
     useDeleteClassMutation,
+    useLazyDownloadClassTemplateQuery,
+    useImportClassesMutation,
+    useLazyExportClassesQuery,
 } = academicApi;

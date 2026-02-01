@@ -4,7 +4,7 @@ import {
     TextField, InputAdornment, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Alert, MenuItem, Select, FormControl, InputLabel, Pagination,
-    Checkbox, ListItemText, Autocomplete
+    Autocomplete
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -341,7 +341,7 @@ const UsersPage: React.FC = () => {
                             renderTags={(value, getTagProps) =>
                                 value.map((option, index) => (
                                     <Chip
-                                        key={option.id} // Added key explicitly although getTagProps usually handles it, but good practice
+                                        // key={option.id} // key is handled by getTagProps
                                         label={option.display_name}
                                         size="small"
                                         {...getTagProps({ index })}

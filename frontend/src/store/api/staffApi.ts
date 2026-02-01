@@ -109,7 +109,7 @@ export const staffApi = apiSlice.injectEndpoints({
         downloadStaffTemplate: builder.query<Blob, void>({
             query: () => ({
                 url: '/staff/template',
-                responseHandler: (response) => response.blob(),
+                responseHandler: (response: any) => response.blob(),
             }),
         }),
         importStaff: builder.mutation<any, FormData>({
@@ -123,7 +123,7 @@ export const staffApi = apiSlice.injectEndpoints({
         exportStaff: builder.query<Blob, void>({
             query: () => ({
                 url: '/staff/export',
-                responseHandler: (response) => response.blob(),
+                responseHandler: (response: any) => response.blob(),
             }),
         }),
     }),

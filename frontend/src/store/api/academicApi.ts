@@ -37,7 +37,7 @@ export const academicApi = apiSlice.injectEndpoints({
         downloadClassTemplate: builder.query<Blob, void>({
             query: () => ({
                 url: '/academic/classes/template',
-                responseHandler: (response) => response.blob(),
+                responseHandler: (response: any) => response.blob(),
             }),
         }),
         importClasses: builder.mutation<{ imported: number, errors: any[] }, FormData>({
@@ -51,7 +51,7 @@ export const academicApi = apiSlice.injectEndpoints({
         exportClasses: builder.query<Blob, void>({
             query: () => ({
                 url: '/academic/classes/export',
-                responseHandler: (response) => response.blob(),
+                responseHandler: (response: any) => response.blob(),
             }),
         }),
     }),

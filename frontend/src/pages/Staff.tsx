@@ -14,7 +14,6 @@ import {
     Close as CloseIcon,
     CloudUpload as CloudUploadIcon,
     FileDownload as FileDownloadIcon,
-    Upload as UploadIcon,
 } from '@mui/icons-material';
 import {
     useGetStaffQuery,

@@ -154,6 +154,7 @@ async def get_dashboard_data(
         fee_collection = float(result.scalar() or 0)
     except Exception as e:
         logger.warning(f"Error getting fee collection: {e}")
+        await db.rollback()
     
     # Get recent students (last 5)
     try:
@@ -207,6 +208,7 @@ async def get_dashboard_data(
         ]
     except Exception as e:
         logger.warning(f"Error fetching recent payments: {e}")
+        await db.rollback()
     
     # Get notifications (Messages)
     try:
@@ -241,6 +243,7 @@ async def get_dashboard_data(
             ))
     except Exception as e:
         logger.warning(f"Error fetching notifications: {e}")
+        await db.rollback()
     
     # REAL Attendance Data
     try:
@@ -296,6 +299,7 @@ async def get_dashboard_data(
 
     except Exception as e:
         logger.error(f"Error fetching attendance: {e}")
+        await db.rollback()
 
     # REAL Schedule Data (Timetable)
     try:
@@ -344,6 +348,7 @@ async def get_dashboard_data(
             
     except Exception as e:
         logger.error(f"Error fetching schedule: {e}")
+        await db.rollback()
 
     
     # Build stats

@@ -51,6 +51,35 @@ async def init_db():
         from app.models import tenant, user, role, module
         await conn.run_sync(Base.metadata.create_all)
 
+    # Run idempotent migrations for columns that may be missing in production
+    # This handles cases where models were updated but ALTER TABLE was never run
+    import logging
+    _logger = logging.getLogger(__name__)
+    
+    migration_statements = [
+        # fee_payments: SoftDeleteMixin columns
+        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE NOT NULL",
+        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP",
+        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS deleted_by UUID",
+        # exam_results: is_passed and rank columns
+        "ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS is_passed BOOLEAN",
+        "ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS rank INTEGER",
+    ]
+    
+    try:
+        from sqlalchemy import text
+        for stmt in migration_statements:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(text(stmt))
+                _logger.info(f"Migration OK: {stmt[:60]}...")
+            except Exception as e:
+                # Non-fatal: table may not exist yet, or column already exists
+                _logger.warning(f"Migration skipped: {stmt[:60]}... ({e})")
+        _logger.info("Startup migrations completed")
+    except Exception as e:
+        _logger.warning(f"Startup migrations failed (non-fatal): {e}")
+
 
 async def close_db():
     """

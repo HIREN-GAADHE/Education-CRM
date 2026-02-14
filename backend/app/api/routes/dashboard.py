@@ -19,7 +19,7 @@ from app.models.staff import Staff
 from app.models.fee import FeePayment, PaymentStatus
 from app.models.message import Message
 from app.models.attendance import Attendance, AttendanceStatus
-from app.models.timetable import TimetableEntry, TimeSlot
+from app.models.timetable import TimetableEntry, TimeSlot, DayOfWeek
 
 logger = logging.getLogger(__name__)
 
@@ -307,7 +307,9 @@ async def get_dashboard_data(
         # Day of week: Mon=1, Sun=7. Python weekday(): Mon=0, Sun=6.
         # DB DayOfWeek Enum: Mon=1...
         
-        today_weekday = datetime.today().weekday() + 1 # 1-7
+        today_weekday_int = datetime.today().weekday() + 1 # 1-7 (Mon=1, Sun=7)
+        # Convert integer to DayOfWeek enum for proper PostgreSQL enum comparison
+        today_day = DayOfWeek(today_weekday_int)
         
         result = await db.execute(
              select(TimetableEntry)
@@ -316,7 +318,7 @@ async def get_dashboard_data(
              .where(
                  and_(
                      TimetableEntry.tenant_id == tenant_id,
-                     TimetableEntry.day_of_week == today_weekday,
+                     TimetableEntry.day_of_week == today_day,
                      TimetableEntry.status == 'ACTIVE' # Use string if Enum issues
                  )
              )

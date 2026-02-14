@@ -539,7 +539,7 @@ async def get_student_profile(
         for result_row, exam in recent_results_query.fetchall():
             recent_results.append({
                 "exam_name": exam.name,
-                "subject": exam.subject,
+                "subject": exam.subject_name,
                 "marks_obtained": result_row.marks_obtained,
                 "max_marks": exam.max_marks,
                 "percentage": result_row.percentage,

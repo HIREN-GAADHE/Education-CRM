@@ -198,6 +198,8 @@ class ExamResultResponse(BaseModel):
     percentage: Optional[float] = None
     is_absent: bool
     is_exempted: bool
+    is_passed: Optional[bool] = None
+    rank: Optional[int] = None
     remarks: Optional[str] = None
     verified: bool
     created_at: datetime

@@ -7,6 +7,7 @@ export interface StudentInfo {
     first_name: string;
     last_name: string;
     course?: string;
+    class_details?: string;
 }
 
 export interface FeePayment {
@@ -81,17 +82,28 @@ export interface FeeSummary {
 // Inject endpoints into the centralized apiSlice
 export const feeApi = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
-        getFeePayments: builder.query<FeePaymentListResponse, { page?: number; pageSize?: number; studentId?: string; status?: string; feeType?: string }>({
-            query: ({ page = 1, pageSize = 10, studentId, status, feeType }) => {
-                const params = new URLSearchParams();
-                params.append('page', page.toString());
-                params.append('page_size', pageSize.toString());
-                if (studentId) params.append('student_id', studentId);
-                if (status) params.append('status', status);
-                if (feeType) params.append('fee_type', feeType);
-                return `/fees?${params.toString()}`;
-            },
-            providesTags: ['Student'],
+        getFeePayments: builder.query<FeePaymentListResponse, {
+            page: number;
+            pageSize: number;
+            student_id?: string;
+            class_id?: string;
+            academic_year?: string;
+            status?: string;
+            fee_type?: string;
+        }>({
+            query: (params) => ({
+                url: '/fees',
+                params: {
+                    page: params.page,
+                    page_size: params.pageSize,
+                    student_id: params.student_id,
+                    class_id: params.class_id,
+                    academic_year: params.academic_year,
+                    status: params.status,
+                    fee_type: params.fee_type,
+                },
+            }),
+            providesTags: ['Fees'],
         }),
         getFeePayment: builder.query<FeePayment, string>({
             query: (id) => `/fees/${id}`,
@@ -112,7 +124,7 @@ export const feeApi = apiSlice.injectEndpoints({
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['Student'],
+            invalidatesTags: ['Fees', 'Student'],
         }),
         updateFeePayment: builder.mutation<FeePayment, { id: string; data: FeePaymentUpdateRequest }>({
             query: ({ id, data }) => ({
@@ -120,7 +132,7 @@ export const feeApi = apiSlice.injectEndpoints({
                 method: 'PUT',
                 body: data,
             }),
-            invalidatesTags: ['Student'],
+            invalidatesTags: ['Fees', 'Student'],
         }),
         makePayment: builder.mutation<FeePayment, MakePaymentRequest>({
             query: ({ payment_id, ...body }) => ({
@@ -128,14 +140,22 @@ export const feeApi = apiSlice.injectEndpoints({
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['Student'],
+            invalidatesTags: ['Fees', 'Student'],
         }),
         deleteFeePayment: builder.mutation<void, string>({
             query: (id) => ({
                 url: `/fees/${id}`,
                 method: 'DELETE',
             }),
-            invalidatesTags: ['Student'],
+            invalidatesTags: ['Fees', 'Student'],
+        }),
+        bulkCreateFees: builder.mutation<{ message: string; count: number }, { class_id: string; fee_type: string; amount: number; description?: string; academic_year?: string; due_date?: string; notes?: string }>({
+            query: (body) => ({
+                url: '/fees/bulk',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Fees', 'Student'],
         }),
     }),
 });
@@ -148,4 +168,5 @@ export const {
     useUpdateFeePaymentMutation,
     useMakePaymentMutation,
     useDeleteFeePaymentMutation,
+    useBulkCreateFeesMutation,
 } = feeApi;

@@ -191,6 +191,12 @@ class ExamResult(TenantBaseModel, TimestampMixin):
     is_exempted = Column(Boolean, default=False)
     exemption_reason = Column(String(500), nullable=True)
     
+    # Pass/Fail Status
+    is_passed = Column(Boolean, nullable=True)
+    
+    # Rank in examination
+    rank = Column(Integer, nullable=True)
+    
     # Remarks
     remarks = Column(String(500), nullable=True)
     

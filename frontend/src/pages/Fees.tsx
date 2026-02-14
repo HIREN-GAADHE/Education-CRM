@@ -4,17 +4,16 @@ import {
     TextField, Button, Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Alert, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, FormControl, InputLabel, Select, MenuItem,
-    Pagination, Avatar
+    TablePagination, Avatar // Changed Pagination to TablePagination
 } from '@mui/material';
 import {
     Add as AddIcon,
-    Edit as EditIcon,
     Delete as DeleteIcon,
-    Close as CloseIcon,
     Payment as PaymentIcon,
-    Check as CheckIcon,
     Person as PersonIcon,
     CreditCard as CreditCardIcon,
+    Settings as SettingsIcon,
+    Send as SendIcon,
 } from '@mui/icons-material';
 import {
     useGetFeePaymentsQuery,
@@ -23,27 +22,57 @@ import {
     useMakePaymentMutation,
     useUpdateFeePaymentMutation,
     useDeleteFeePaymentMutation,
+    useBulkCreateFeesMutation,
 } from '@/store/api/feeApi';
 import type { FeePayment } from '@/store/api/feeApi';
 import { useGetStudentsQuery } from '@/store/api/studentApi';
+import { useGetClassesQuery } from '@/store/api/academicApi';
 import { toast } from 'react-toastify';
 import { PaymentCheckout } from '@/components/payment';
+import { ReminderDialog } from '@/components/fees/ReminderDialog';
+import ReminderSettingsDialog from '@/components/fees/ReminderSettingsDialog';
+import { useSendReceiptMutation, useBulkSendRemindersMutation, useSendRemindersMutation } from '@/store/api/remindersApi';
+import {
+    Notifications as NotificationsIcon,
+    Receipt as ReceiptIcon,
+} from '@mui/icons-material';
+import { Checkbox } from '@mui/material';
 
 const FeesPage: React.FC = () => {
     const [page, setPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(10); // Added state
     const [openCreateDialog, setOpenCreateDialog] = useState(false);
     const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
     const [openStatusDialog, setOpenStatusDialog] = useState(false);
     const [openOnlinePayment, setOpenOnlinePayment] = useState(false);
+    const [openSettingsDialog, setOpenSettingsDialog] = useState(false);
+
+    // Selection & Filters
+    const [selectedFees, setSelectedFees] = useState<string[]>([]);
+    // Dynamic academic year based on current date (April start)
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-11
+    // If April (3) or later, use Current-Next. If Jan-Mar, use Prev-Current.
+    const startYear = currentMonth >= 3 ? currentYear : currentYear - 1;
+    const defaultAcademicYear = `${startYear}-${startYear + 1}`;
+
+    const [filters, setFilters] = useState({
+        classId: '',
+        status: '',
+        academicYear: defaultAcademicYear
+    });
+
     const [selectedPayment, setSelectedPayment] = useState<FeePayment | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [openReminderDialog, setOpenReminderDialog] = useState(false);
+    const [reminderTargets, setReminderTargets] = useState<{ studentIds: string[], paymentIds?: string[], studentName?: string }>({ studentIds: [] });
 
     // Create form state
     const [createForm, setCreateForm] = useState({
         student_id: '',
         fee_type: 'tuition',
         total_amount: 0,
-        academic_year: '2024-25',
+        academic_year: defaultAcademicYear,
         due_date: '',
         description: '',
     });
@@ -60,13 +89,64 @@ const FeesPage: React.FC = () => {
     const [newStatus, setNewStatus] = useState('');
 
     // API hooks
-    const { data: fees, isLoading, error, refetch } = useGetFeePaymentsQuery({ page, pageSize: 10 });
+    const { data: fees, isLoading, error, refetch } = useGetFeePaymentsQuery({
+        page,
+        pageSize: rowsPerPage, // Use dynamic pageSize
+        class_id: filters.classId || undefined,
+        status: filters.status || undefined,
+        academic_year: filters.academicYear || undefined
+    });
     const { data: summary, refetch: refetchSummary } = useGetFeeSummaryQuery({});
-    const { data: students } = useGetStudentsQuery({ page: 1, pageSize: 100 });
+    const { data: students } = useGetStudentsQuery({ page: 1, pageSize: 1000 }); // Increased limit
+    const { data: classes } = useGetClassesQuery();
+
     const [createFeePayment, { isLoading: isCreating }] = useCreateFeePaymentMutation();
     const [makePayment, { isLoading: isPaying }] = useMakePaymentMutation();
     const [updateFeePayment, { isLoading: isUpdating }] = useUpdateFeePaymentMutation();
     const [deleteFeePayment, { isLoading: isDeleting }] = useDeleteFeePaymentMutation();
+    const [bulkSendReminders, { isLoading: isBulkSending }] = useBulkSendRemindersMutation();
+
+    // Bulk Create State
+    const [openBulkCreateDialog, setOpenBulkCreateDialog] = useState(false);
+    const [bulkCreateForm, setBulkCreateForm] = useState({
+        class_id: '',
+        fee_type: 'tuition',
+        amount: 0,
+        academic_year: defaultAcademicYear,
+        due_date: '',
+        description: '',
+        notes: ''
+    });
+    const [bulkCreateFees, { isLoading: isBulkCreating }] = useBulkCreateFeesMutation();
+
+    const handleOpenBulkCreate = () => {
+        setBulkCreateForm({
+            class_id: '',
+            fee_type: 'tuition',
+            amount: 0,
+            academic_year: defaultAcademicYear,
+            due_date: '',
+            description: '',
+            notes: ''
+        });
+        setOpenBulkCreateDialog(true);
+    };
+
+    const handleBulkCreateSubmit = async () => {
+        if (!bulkCreateForm.class_id) {
+            toast.error("Please select a class");
+            return;
+        }
+        try {
+            const result = await bulkCreateFees(bulkCreateForm).unwrap();
+            toast.success(result.message);
+            setOpenBulkCreateDialog(false);
+            refetch();
+            refetchSummary();
+        } catch (err: any) {
+            toast.error(err?.data?.detail || 'Failed to generate bulk fees');
+        }
+    };
 
     const feeTypes = [
         { value: 'tuition', label: 'Tuition Fee' },
@@ -94,12 +174,107 @@ const FeesPage: React.FC = () => {
         { value: 'cancelled', label: 'Cancelled', color: 'default' },
     ];
 
+    const getStudentName = (fee: FeePayment) => {
+        if (fee.student) {
+            return `${fee.student.first_name} ${fee.student.last_name}`;
+        }
+        return 'Unknown Student';
+    };
+
+    const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (event.target.checked && fees?.items) {
+            setSelectedFees(fees.items.map((fee) => fee.id));
+        } else {
+            setSelectedFees([]);
+        }
+    };
+
+    const handleSelectOne = (event: React.ChangeEvent<HTMLInputElement>, id: string) => {
+        if (event.target.checked) {
+            setSelectedFees((prev) => [...prev, id]);
+        } else {
+            setSelectedFees((prev) => prev.filter((feeId) => feeId !== id));
+        }
+    };
+
+
+    const [sendReminders, { isLoading: isSendingReminders }] = useSendRemindersMutation();
+
+    const handleSendSelectedReminders = async () => {
+        if (selectedFees.length === 0) return;
+        try {
+            // We need student IDs corresponding to these payments.
+            // We can find them from fees.items
+            const selectedPaymentObjects = fees?.items.filter(f => selectedFees.includes(f.id));
+            if (!selectedPaymentObjects) return;
+
+            const studentIds = [...new Set(selectedPaymentObjects.map(f => f.student_id))];
+
+            await sendReminders({
+                student_ids: studentIds,
+                fee_payment_ids: selectedFees,
+                channels: ['email'] // Default to email for quick action
+            }).unwrap();
+
+            toast.success(`Reminders sent to ${studentIds.length} students`);
+            setSelectedFees([]);
+        } catch (err) {
+            toast.error("Failed to send reminders");
+        }
+    };
+
+    const handleSendFilteredReminders = async () => {
+        if (!filters.classId && !filters.status) {
+            if (!confirm("No filters selected. This will send reminders to ALL students. Are you sure?")) return;
+        } else {
+            if (!confirm(`Send reminders to all students matching current filters?`)) return;
+        }
+
+        try {
+            await bulkSendReminders({
+                filters: {
+                    class_id: filters.classId || undefined,
+                    status: filters.status || 'pending', // Default to pending if not specified? 
+                    // Actually if status empty, backend defaults to pending/overdue
+                    academic_year: filters.academicYear,
+                },
+                channels: ['email']
+            }).unwrap();
+            toast.success("Bulk reminder process started");
+        } catch (err) {
+            toast.error("Failed to initiate bulk reminders");
+        }
+    };
+
+    const handleOpenReminder = (fee: FeePayment) => {
+        setReminderTargets({
+            studentIds: [fee.student_id],
+            paymentIds: [fee.id],
+            studentName: getStudentName(fee)
+        });
+        setOpenReminderDialog(true);
+    };
+
+    const [sendReceipt] = useSendReceiptMutation();
+    const handleSendReceipt = async (fee: FeePayment) => {
+        if (!confirm("Send receipt to student via email?")) return;
+        try {
+            await sendReceipt({
+                payment_id: fee.id,
+                channels: ['email']
+            }).unwrap();
+            toast.success("Receipt sent successfully");
+        } catch (err) {
+            toast.error("Failed to send receipt");
+        }
+    };
+
     const handleOpenCreate = () => {
         setCreateForm({
             student_id: '',
             fee_type: 'tuition',
             total_amount: 0,
-            academic_year: '2024-25',
+            academic_year: defaultAcademicYear,
             due_date: '',
             description: '',
         });
@@ -118,9 +293,9 @@ const FeesPage: React.FC = () => {
         }
     };
 
-    const handleOpenPayment = (payment: FeePayment) => {
-        setSelectedPayment(payment);
-        const balance = payment.total_amount - payment.paid_amount - payment.discount_amount + payment.fine_amount;
+    const handleOpenPayment = (fee: FeePayment) => {
+        setSelectedPayment(fee);
+        const balance = fee.total_amount - fee.paid_amount - fee.discount_amount + fee.fine_amount;
         setPaymentForm({
             amount: balance > 0 ? balance : 0,
             payment_method: 'cash',
@@ -130,24 +305,12 @@ const FeesPage: React.FC = () => {
         setOpenPaymentDialog(true);
     };
 
-    const handleOpenOnlinePayment = (payment: FeePayment) => {
-        setSelectedPayment(payment);
+    const handleOpenOnlinePayment = (fee: FeePayment) => {
+        setSelectedPayment(fee);
         setOpenOnlinePayment(true);
     };
 
-    const handleOnlinePaymentSuccess = (orderNumber: string, _transactionId: string) => {
-        toast.success(`Payment successful! Order: ${orderNumber}`);
-        setOpenOnlinePayment(false);
-        setSelectedPayment(null);
-        refetch();
-        refetchSummary();
-    };
-
-    const handleOnlinePaymentFailure = (error: string) => {
-        toast.error(`Payment failed: ${error}`);
-    };
-
-    const handleConfirmPayment = async () => {
+    const handleMakePayment = async () => {
         if (!selectedPayment) return;
         try {
             await makePayment({
@@ -163,18 +326,13 @@ const FeesPage: React.FC = () => {
             refetch();
             refetchSummary();
         } catch (err: any) {
-            toast.error(err?.data?.detail || 'Payment failed');
+            toast.error(err?.data?.detail || 'Failed to record payment');
         }
     };
 
-    const handleOpenStatusChange = (payment: FeePayment) => {
-        setSelectedPayment(payment);
-        setNewStatus(payment.status);
-        setOpenStatusDialog(true);
-    };
 
-    const handleConfirmStatusChange = async () => {
-        if (!selectedPayment) return;
+    const handleStatusChange = async () => {
+        if (!selectedPayment || !newStatus) return;
         try {
             await updateFeePayment({
                 id: selectedPayment.id,
@@ -198,40 +356,115 @@ const FeesPage: React.FC = () => {
             refetch();
             refetchSummary();
         } catch (err: any) {
-            toast.error(err?.data?.detail || 'Delete failed');
+            toast.error(err?.data?.detail || 'Failed to delete fee');
         }
-    };
-
-    const getStatusColor = (status: string) => {
-        return statusOptions.find(s => s.value === status)?.color || 'default';
-    };
-
-    const getStudentName = (fee: FeePayment) => {
-        if (fee.student) {
-            return `${fee.student.first_name} ${fee.student.last_name}`;
-        }
-        return 'Unknown Student';
     };
 
     return (
-        <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h4" fontWeight="bold" sx={{ color: 'primary.main' }}>
+                    Fee Management
+                </Typography>
                 <Box>
-                    <Typography variant="h4" fontWeight="bold" sx={{
-                        background: 'linear-gradient(135deg, #f59e0b 0%, #10b981 100%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                    }}>
-                        Fees & Finance
-                    </Typography>
-                    <Typography color="text.secondary">
-                        Manage fee payments and financial records
-                    </Typography>
+                    <Button
+                        variant="outlined"
+                        onClick={handleOpenBulkCreate}
+                        disabled={isBulkCreating}
+                        sx={{ mr: 2 }}
+                    >
+                        Bulk Generate
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<SettingsIcon />}
+                        onClick={() => setOpenSettingsDialog(true)}
+                        sx={{ mr: 2 }}
+                    >
+                        Settings
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenCreate}
+                    >
+                        Add Fee
+                    </Button>
                 </Box>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} sx={{ borderRadius: 3 }}>
-                    Add Fee
-                </Button>
             </Box>
+
+            {/* Filters & Bulk Actions */}
+            <Card sx={{ mb: 3, p: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={3}>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Class</InputLabel>
+                            <Select
+                                value={filters.classId}
+                                label="Class"
+                                onChange={(e) => setFilters(prev => ({ ...prev, classId: e.target.value }))}
+                            >
+                                <MenuItem value=""><em>All Classes</em></MenuItem>
+                                {classes?.map((cls) => (
+                                    <MenuItem key={cls.id} value={cls.id}>
+                                        {cls.name} - {cls.section}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Grid>
+                    <Grid item xs={12} md={3}>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Status</InputLabel>
+                            <Select
+                                value={filters.status}
+                                label="Status"
+                                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                            >
+                                <MenuItem value=""><em>All Statuses</em></MenuItem>
+                                {statusOptions.map((opt) => (
+                                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Grid>
+                    <Grid item xs={12} md={3}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            label="Academic Year"
+                            value={filters.academicYear}
+                            onChange={(e) => setFilters(prev => ({ ...prev, academicYear: e.target.value }))}
+                            helperText="Leave empty for all years"
+                        />
+                    </Grid>
+                    <Grid item xs={12} md={3} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                        {selectedFees.length > 0 ? (
+                            <Button
+                                variant="contained"
+                                color="secondary"
+                                startIcon={<NotificationsIcon />}
+                                onClick={handleSendSelectedReminders}
+                                disabled={isSendingReminders}
+                            >
+                                Remind Selected ({selectedFees.length})
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="outlined"
+                                color="secondary"
+                                startIcon={<SendIcon />}
+                                onClick={handleSendFilteredReminders}
+                                disabled={isBulkSending}
+                            >
+                                Remind All Filtered
+                            </Button>
+                        )}
+                    </Grid>
+                </Grid>
+            </Card>
+
+
 
             {/* Summary Cards */}
             {summary && (
@@ -281,65 +514,122 @@ const FeesPage: React.FC = () => {
                         <Table stickyHeader size="small">
                             <TableHead>
                                 <TableRow>
-                                    <TableCell sx={{ minWidth: 180, fontWeight: 'bold', bgcolor: 'grey.100' }}>Student</TableCell>
-                                    <TableCell sx={{ minWidth: 100, fontWeight: 'bold', bgcolor: 'grey.100' }}>Fee Type</TableCell>
-                                    <TableCell align="right" sx={{ minWidth: 90, fontWeight: 'bold', bgcolor: 'grey.100' }}>Total (₹)</TableCell>
-                                    <TableCell align="right" sx={{ minWidth: 90, fontWeight: 'bold', bgcolor: 'grey.100' }}>Paid (₹)</TableCell>
-                                    <TableCell align="right" sx={{ minWidth: 90, fontWeight: 'bold', bgcolor: 'grey.100' }}>Balance (₹)</TableCell>
-                                    <TableCell sx={{ minWidth: 80, fontWeight: 'bold', bgcolor: 'grey.100' }}>Status</TableCell>
-                                    <TableCell sx={{ minWidth: 80, fontWeight: 'bold', bgcolor: 'grey.100' }}>Receipt</TableCell>
-                                    <TableCell align="center" sx={{ minWidth: 150, fontWeight: 'bold', bgcolor: 'grey.100' }}>Actions</TableCell>
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            indeterminate={selectedFees.length > 0 && selectedFees.length < (fees?.items.length || 0)}
+                                            checked={fees?.items.length > 0 && selectedFees.length === fees?.items.length}
+                                            onChange={handleSelectAll}
+                                        />
+                                    </TableCell>
+                                    <TableCell>Student</TableCell>
+                                    <TableCell>Fee Type</TableCell>
+                                    <TableCell>Amount</TableCell>
+                                    <TableCell>Paid</TableCell>
+                                    <TableCell>Balance</TableCell>
+                                    <TableCell>Due Date</TableCell>
+                                    <TableCell>Status</TableCell>
+                                    <TableCell>Receipt</TableCell>
+                                    <TableCell align="center">Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
                                 {fees.items.map((fee) => {
                                     const balance = fee.total_amount - fee.paid_amount - fee.discount_amount + fee.fine_amount;
+                                    const isSelected = selectedFees.indexOf(fee.id) !== -1;
                                     return (
-                                        <TableRow key={fee.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.75rem' }}>
-                                                        {fee.student ? `${fee.student.first_name[0]}${fee.student.last_name[0]}` : <PersonIcon fontSize="small" />}
-                                                    </Avatar>
-                                                    <Box sx={{ minWidth: 0 }}>
-                                                        <Typography variant="body2" fontWeight={600} noWrap>
-                                                            {getStudentName(fee)}
-                                                        </Typography>
-                                                        <Typography variant="caption" color="text.secondary" noWrap>
-                                                            {fee.student?.admission_number || '-'} • {fee.academic_year}
-                                                        </Typography>
-                                                    </Box>
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell sx={{ textTransform: 'capitalize' }}>{fee.fee_type.replace('_', ' ')}</TableCell>
-                                            <TableCell align="right">{fee.total_amount.toLocaleString()}</TableCell>
-                                            <TableCell align="right" sx={{ color: fee.paid_amount > 0 ? 'success.main' : 'inherit', fontWeight: fee.paid_amount > 0 ? 600 : 400 }}>
-                                                {fee.paid_amount.toLocaleString()}
-                                                {fee.paid_amount > 0 && ' ✓'}
-                                            </TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 600, color: balance > 0 ? 'error.main' : 'success.main' }}>
-                                                {balance.toLocaleString()}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={fee.status.replace('_', ' ')}
-                                                    size="small"
-                                                    color={getStatusColor(fee.status) as any}
-                                                    onClick={() => handleOpenStatusChange(fee)}
-                                                    sx={{ cursor: 'pointer', textTransform: 'capitalize', fontSize: '0.7rem' }}
+                                        <TableRow
+                                            key={fee.id}
+                                            hover
+                                            sx={{ '&:last-child td': { borderBottom: 0 } }}
+                                            selected={isSelected}
+                                        >
+                                            <TableCell padding="checkbox">
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    onChange={(event) => handleSelectOne(event, fee.id)}
                                                 />
                                             </TableCell>
                                             <TableCell>
-                                                {fee.receipt_number ? (
-                                                    <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
-                                                        {fee.receipt_number}
+                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                    <Avatar sx={{ mr: 2, bgcolor: 'primary.main', width: 32, height: 32 }}>
+                                                        {fee.student?.first_name?.[0] || <PersonIcon />}
+                                                    </Avatar>
+                                                    <Box>
+                                                        <Typography variant="subtitle2" fontWeight="bold">
+                                                            {getStudentName(fee)}
+                                                        </Typography>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                                            {fee.student?.admission_number || 'N/A'}
+                                                        </Typography>
+                                                        {fee.student?.class_details && (
+                                                            <Typography variant="caption" display="block" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                                                {fee.student.class_details}
+                                                            </Typography>
+                                                        )}
+                                                    </Box>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                                                    {fee.fee_type.replace('_', ' ')}
+                                                </Typography>
+                                                {fee.academic_year && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {fee.academic_year}
                                                     </Typography>
-                                                ) : (
-                                                    <Typography variant="caption" color="text.secondary">-</Typography>
                                                 )}
                                             </TableCell>
                                             <TableCell>
+                                                <Typography variant="body2" fontWeight="bold">₹{fee.total_amount.toLocaleString()}</Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2" color="success.main">₹{fee.paid_amount.toLocaleString()}</Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2" color={balance > 0 ? 'error.main' : 'text.secondary'}>
+                                                    ₹{balance.toLocaleString()}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2">
+                                                    {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'N/A'}
+                                                </Typography>
+                                            </TableCell>
+
+                                            {/* Status Column */}
+                                            <TableCell>
+                                                <Chip
+                                                    label={fee.status}
+                                                    size="small"
+                                                    color={statusOptions.find(o => o.value === fee.status)?.color as any || 'default'}
+                                                    sx={{ textTransform: 'capitalize' }}
+                                                />
+                                            </TableCell>
+
+                                            {/* Receipt Column - Only if paid > 0 */}
+                                            <TableCell>
+                                                {fee.paid_amount > 0 ? (
+                                                    <IconButton size="small" onClick={() => handleSendReceipt(fee)} title="Send Receipt">
+                                                        <ReceiptIcon fontSize="small" />
+                                                    </IconButton>
+                                                ) : '-'}
+                                            </TableCell>
+
+                                            <TableCell align="center">
                                                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, flexWrap: 'nowrap' }}>
+                                                    {/* Reminder Button (if pending/overdue) */}
+                                                    {(fee.status === 'pending' || fee.status === 'overdue' || fee.status === 'partial') && (
+                                                        <IconButton
+                                                            size="small"
+                                                            color="warning"
+                                                            onClick={() => handleOpenReminder(fee)}
+                                                            title="Send Reminder"
+                                                            sx={{ bgcolor: 'warning.light', color: 'white', '&:hover': { bgcolor: 'warning.main' } }}
+                                                        >
+                                                            <NotificationsIcon fontSize="small" />
+                                                        </IconButton>
+                                                    )}
+
                                                     {fee.status !== 'completed' && fee.status !== 'cancelled' && (
                                                         <>
                                                             <IconButton
@@ -362,13 +652,14 @@ const FeesPage: React.FC = () => {
                                                             </IconButton>
                                                         </>
                                                     )}
-                                                    {fee.status === 'completed' && (
-                                                        <Chip label="PAID" color="success" size="small" sx={{ fontSize: '0.65rem' }} />
-                                                    )}
-                                                    <IconButton size="small" onClick={() => handleOpenStatusChange(fee)} title="Edit Status">
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                    <IconButton size="small" color="error" onClick={() => setDeleteConfirm(fee.id)} title="Delete">
+                                                    <IconButton
+                                                        size="small"
+                                                        color="error"
+                                                        onClick={() => {
+                                                            setDeleteConfirm(fee.id);
+                                                        }}
+                                                        title="Delete"
+                                                    >
                                                         <DeleteIcon fontSize="small" />
                                                     </IconButton>
                                                 </Box>
@@ -382,180 +673,223 @@ const FeesPage: React.FC = () => {
                 </Card>
             )}
 
-            {/* Empty State */}
-            {!isLoading && fees?.items.length === 0 && (
-                <Card sx={{ p: 6, textAlign: 'center' }}>
-                    <Typography variant="h6" color="text.secondary" gutterBottom>No fee records found</Typography>
-                    <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>Add Fee</Button>
-                </Card>
-            )}
-
             {/* Pagination */}
-            {fees && fees.total_pages > 1 && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <Pagination count={fees.total_pages} page={page} onChange={(_, p) => setPage(p)} color="primary" />
-                </Box>
+            {fees && (
+                <TablePagination
+                    component="div"
+                    count={fees.total}
+                    page={page - 1} // TablePagination is 0-indexed
+                    onPageChange={(_event, newPage) => setPage(newPage + 1)} // API is 1-indexed
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={(event) => {
+                        setRowsPerPage(parseInt(event.target.value, 10));
+                        setPage(1);
+                    }}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    labelRowsPerPage="Rows per page:"
+                    showFirstButton
+                    showLastButton
+                />
             )}
 
             {/* Create Fee Dialog */}
             <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    Add New Fee
-                    <IconButton onClick={() => setOpenCreateDialog(false)} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
-                </DialogTitle>
-                <DialogContent dividers>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-                        <FormControl fullWidth>
-                            <InputLabel>Student *</InputLabel>
-                            <Select value={createForm.student_id} label="Student *" onChange={(e) => setCreateForm({ ...createForm, student_id: e.target.value })}>
-                                {students?.items.map(s => <MenuItem key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.admission_number})</MenuItem>)}
-                            </Select>
-                        </FormControl>
-                        <FormControl fullWidth>
-                            <InputLabel>Fee Type</InputLabel>
-                            <Select value={createForm.fee_type} label="Fee Type" onChange={(e) => setCreateForm({ ...createForm, fee_type: e.target.value })}>
-                                {feeTypes.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
-                            </Select>
-                        </FormControl>
-                        <TextField
-                            fullWidth
-                            label="Total Amount (₹) *"
-                            type="number"
-                            value={createForm.total_amount}
-                            onChange={(e) => setCreateForm({ ...createForm, total_amount: Number(e.target.value) })}
-                        />
-                        <TextField
-                            fullWidth
-                            label="Academic Year"
-                            value={createForm.academic_year}
-                            onChange={(e) => setCreateForm({ ...createForm, academic_year: e.target.value })}
-                        />
-                        <TextField
-                            fullWidth
-                            label="Due Date"
-                            type="date"
-                            value={createForm.due_date}
-                            onChange={(e) => setCreateForm({ ...createForm, due_date: e.target.value })}
-                            InputLabelProps={{ shrink: true }}
-                        />
-                        <TextField
-                            fullWidth
-                            label="Description"
-                            value={createForm.description}
-                            onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                        />
-                    </Box>
+                <DialogTitle>Add Fee Record</DialogTitle>
+                <DialogContent>
+                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid item xs={12}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Student</InputLabel>
+                                <Select
+                                    value={createForm.student_id}
+                                    label="Student"
+                                    onChange={(e) => setCreateForm({ ...createForm, student_id: e.target.value })}
+                                >
+                                    {students?.items?.map((s) => (
+                                        <MenuItem key={s.id} value={s.id}>
+                                            {s.first_name} {s.last_name} ({s.admission_number})
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Fee Type</InputLabel>
+                                <Select
+                                    value={createForm.fee_type}
+                                    label="Fee Type"
+                                    onChange={(e) => setCreateForm({ ...createForm, fee_type: e.target.value })}
+                                >
+                                    {feeTypes.map((type) => (
+                                        <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Total Amount"
+                                type="number"
+                                value={createForm.total_amount}
+                                onChange={(e) => setCreateForm({ ...createForm, total_amount: parseFloat(e.target.value) || 0 })}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Academic Year"
+                                value={createForm.academic_year}
+                                onChange={(e) => setCreateForm({ ...createForm, academic_year: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Due Date"
+                                type="date"
+                                InputLabelProps={{ shrink: true }}
+                                value={createForm.due_date}
+                                onChange={(e) => setCreateForm({ ...createForm, due_date: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Description"
+                                value={createForm.description}
+                                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                            />
+                        </Grid>
+                    </Grid>
                 </DialogContent>
-                <DialogActions sx={{ p: 2 }}>
+                <DialogActions>
                     <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={handleCreate} disabled={isCreating || !createForm.student_id || !createForm.total_amount}>
-                        {isCreating ? <CircularProgress size={24} /> : 'Create Fee'}
+                    <Button onClick={handleCreate} variant="contained" disabled={isCreating}>
+                        {isCreating ? 'Creating...' : 'Create Fee'}
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* Payment Confirmation Dialog */}
+            {/* Manual Payment Dialog */}
             <Dialog open={openPaymentDialog} onClose={() => setOpenPaymentDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    Confirm Payment
-                    <IconButton onClick={() => setOpenPaymentDialog(false)} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
-                </DialogTitle>
-                <DialogContent dividers>
+                <DialogTitle>Record Payment</DialogTitle>
+                <DialogContent>
                     {selectedPayment && (
-                        <Box>
-                            <Alert severity="info" sx={{ mb: 2 }}>
-                                <strong>Student:</strong> {getStudentName(selectedPayment)}<br />
-                                <strong>Fee Type:</strong> {selectedPayment.fee_type}<br />
-                                <strong>Balance:</strong> ₹{(selectedPayment.total_amount - selectedPayment.paid_amount - selectedPayment.discount_amount + selectedPayment.fine_amount).toLocaleString()}
-                            </Alert>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                <TextField
-                                    fullWidth
-                                    label="Payment Amount (₹) *"
-                                    type="number"
-                                    value={paymentForm.amount}
-                                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
-                                />
-                                <FormControl fullWidth>
-                                    <InputLabel>Payment Method</InputLabel>
-                                    <Select value={paymentForm.payment_method} label="Payment Method" onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
-                                        {paymentMethods.map(m => <MenuItem key={m.value} value={m.value}>{m.label}</MenuItem>)}
-                                    </Select>
-                                </FormControl>
-                                <TextField
-                                    fullWidth
-                                    label="Reference Number"
-                                    value={paymentForm.payment_reference}
-                                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_reference: e.target.value })}
-                                    placeholder="Transaction ID, Cheque No., etc."
-                                />
-                                <TextField
-                                    fullWidth
-                                    label="Notes"
-                                    multiline
-                                    rows={2}
-                                    value={paymentForm.notes}
-                                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                                />
-                            </Box>
+                        <Box sx={{ mb: 2, mt: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                                Student: <strong>{getStudentName(selectedPayment)}</strong>
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Total: ₹{selectedPayment.total_amount.toLocaleString()} | Paid: ₹{selectedPayment.paid_amount.toLocaleString()} | Balance: ₹{(selectedPayment.total_amount - selectedPayment.paid_amount - selectedPayment.discount_amount + selectedPayment.fine_amount).toLocaleString()}
+                            </Typography>
                         </Box>
                     )}
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Amount"
+                                type="number"
+                                value={paymentForm.amount}
+                                onChange={(e) => setPaymentForm({ ...paymentForm, amount: parseFloat(e.target.value) || 0 })}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Payment Method</InputLabel>
+                                <Select
+                                    value={paymentForm.payment_method}
+                                    label="Payment Method"
+                                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                                >
+                                    {paymentMethods.map((m) => (
+                                        <MenuItem key={m.value} value={m.value}>{m.label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Payment Reference (Cheque No / UPI Ref)"
+                                value={paymentForm.payment_reference}
+                                onChange={(e) => setPaymentForm({ ...paymentForm, payment_reference: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Notes"
+                                multiline
+                                rows={2}
+                                value={paymentForm.notes}
+                                onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                            />
+                        </Grid>
+                    </Grid>
                 </DialogContent>
-                <DialogActions sx={{ p: 2 }}>
+                <DialogActions>
                     <Button onClick={() => setOpenPaymentDialog(false)}>Cancel</Button>
-                    <Button
-                        variant="contained"
-                        color="success"
-                        startIcon={<CheckIcon />}
-                        onClick={handleConfirmPayment}
-                        disabled={isPaying || paymentForm.amount <= 0}
-                    >
-                        {isPaying ? <CircularProgress size={24} /> : 'Confirm Payment'}
+                    <Button onClick={handleMakePayment} variant="contained" disabled={isPaying}>
+                        {isPaying ? 'Processing...' : 'Record Payment'}
                     </Button>
                 </DialogActions>
             </Dialog>
 
             {/* Status Change Dialog */}
             <Dialog open={openStatusDialog} onClose={() => setOpenStatusDialog(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>
-                    Change Status
-                    <IconButton onClick={() => setOpenStatusDialog(false)} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseIcon /></IconButton>
-                </DialogTitle>
-                <DialogContent dividers>
-                    {selectedPayment && (
-                        <Alert severity="info" sx={{ mb: 2 }}>
-                            <strong>Student:</strong> {getStudentName(selectedPayment)}<br />
-                            <strong>Fee:</strong> {selectedPayment.fee_type} - ₹{selectedPayment.total_amount.toLocaleString()}
-                        </Alert>
-                    )}
-                    <FormControl fullWidth sx={{ mt: 1 }}>
+                <DialogTitle>Change Status</DialogTitle>
+                <DialogContent>
+                    <FormControl fullWidth size="small" sx={{ mt: 1 }}>
                         <InputLabel>Status</InputLabel>
-                        <Select value={newStatus} label="Status" onChange={(e) => setNewStatus(e.target.value)}>
-                            {statusOptions.map(s => <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>)}
+                        <Select
+                            value={newStatus}
+                            label="Status"
+                            onChange={(e) => setNewStatus(e.target.value)}
+                        >
+                            {statusOptions.map((opt) => (
+                                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                            ))}
                         </Select>
                     </FormControl>
                 </DialogContent>
-                <DialogActions sx={{ p: 2 }}>
+                <DialogActions>
                     <Button onClick={() => setOpenStatusDialog(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={handleConfirmStatusChange} disabled={isUpdating}>
-                        {isUpdating ? <CircularProgress size={24} /> : 'Update Status'}
+                    <Button onClick={handleStatusChange} variant="contained" disabled={isUpdating}>
+                        {isUpdating ? 'Updating...' : 'Update Status'}
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* Delete Confirmation */}
-            <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}>
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
                 <DialogTitle>Confirm Delete</DialogTitle>
-                <DialogContent><Typography>Are you sure you want to delete this fee record?</Typography></DialogContent>
+                <DialogContent>
+                    <Typography>Are you sure you want to delete this fee record? This action cannot be undone.</Typography>
+                </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-                    <Button color="error" variant="contained" onClick={() => deleteConfirm && handleDelete(deleteConfirm)} disabled={isDeleting}>
-                        {isDeleting ? <CircularProgress size={24} /> : 'Delete'}
+                    <Button
+                        onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
+                        variant="contained"
+                        color="error"
+                        disabled={isDeleting}
+                    >
+                        {isDeleting ? 'Deleting...' : 'Delete'}
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* Online Payment Checkout */}
+            {/* Online Payment Dialog */}
             {selectedPayment && (
                 <PaymentCheckout
                     open={openOnlinePayment}
@@ -565,14 +899,131 @@ const FeesPage: React.FC = () => {
                     }}
                     amount={selectedPayment.total_amount - selectedPayment.paid_amount - selectedPayment.discount_amount + selectedPayment.fine_amount}
                     purpose="fee_payment"
-                    description={`${selectedPayment.fee_type.replace('_', ' ')} - ${selectedPayment.academic_year}`}
+                    description={`${selectedPayment.fee_type} fee - ${getStudentName(selectedPayment)}`}
                     studentId={selectedPayment.student_id}
                     feePaymentId={selectedPayment.id}
                     payerName={selectedPayment.student ? `${selectedPayment.student.first_name} ${selectedPayment.student.last_name}` : ''}
-                    onSuccess={handleOnlinePaymentSuccess}
-                    onFailure={handleOnlinePaymentFailure}
+                    onSuccess={() => {
+                        setOpenOnlinePayment(false);
+                        setSelectedPayment(null);
+                        refetch();
+                        refetchSummary();
+                        toast.success('Online payment completed!');
+                    }}
+                    onFailure={(error) => {
+                        toast.error(error || 'Online payment failed');
+                    }}
                 />
             )}
+
+            {/* Reminder Dialog */}
+            <ReminderDialog
+                open={openReminderDialog}
+                onClose={() => setOpenReminderDialog(false)}
+                studentIds={reminderTargets.studentIds}
+                feePaymentIds={reminderTargets.paymentIds}
+                studentName={reminderTargets.studentName}
+            />
+
+            <ReminderSettingsDialog
+                open={openSettingsDialog}
+                onClose={() => setOpenSettingsDialog(false)}
+            />
+
+            {/* Bulk Create Dialog */}
+            <Dialog open={openBulkCreateDialog} onClose={() => setOpenBulkCreateDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Bulk Generate Fees for Class</DialogTitle>
+                <DialogContent>
+                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid item xs={12}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Class</InputLabel>
+                                <Select
+                                    value={bulkCreateForm.class_id}
+                                    label="Class"
+                                    onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, class_id: e.target.value })}
+                                >
+                                    {classes?.map((cls) => (
+                                        <MenuItem key={cls.id} value={cls.id}>
+                                            {cls.name} - {cls.section}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Fee Type</InputLabel>
+                                <Select
+                                    value={bulkCreateForm.fee_type}
+                                    label="Fee Type"
+                                    onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, fee_type: e.target.value })}
+                                >
+                                    {feeTypes.map((type) => (
+                                        <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Amount"
+                                type="number"
+                                value={bulkCreateForm.amount}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, amount: parseFloat(e.target.value) })}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Academic Year"
+                                value={bulkCreateForm.academic_year}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, academic_year: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Due Date"
+                                type="date"
+                                InputLabelProps={{ shrink: true }}
+                                value={bulkCreateForm.due_date}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, due_date: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Description"
+                                value={bulkCreateForm.description}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, description: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <TextField
+                                fullWidth
+                                size="small"
+                                label="Notes"
+                                multiline
+                                rows={2}
+                                value={bulkCreateForm.notes}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, notes: e.target.value })}
+                            />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenBulkCreateDialog(false)}>Cancel</Button>
+                    <Button onClick={handleBulkCreateSubmit} variant="contained" disabled={isBulkCreating}>
+                        {isBulkCreating ? 'Generating...' : 'Generate Fees'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

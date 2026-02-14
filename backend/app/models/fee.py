@@ -7,7 +7,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime, date
 import enum
 
-from app.models.base import TenantBaseModel, BaseModel
+from app.models.base import TenantBaseModel, BaseModel, SoftDeleteMixin
 
 
 class FeeType(str, enum.Enum):
@@ -73,7 +73,7 @@ class FeeStructure(TenantBaseModel):
         return f"<FeeStructure {self.name}: ₹{self.total_amount}>"
 
 
-class FeePayment(TenantBaseModel):
+class FeePayment(TenantBaseModel, SoftDeleteMixin):
     """
     Individual fee payment record.
     """

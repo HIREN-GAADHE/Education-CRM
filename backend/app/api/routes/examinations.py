@@ -229,6 +229,14 @@ async def update_examination(
     for field, value in exam_data.model_dump(exclude_unset=True).items():
         if field == "status" and value:
             setattr(exam, field, ExamStatus(value.value))
+        elif field == "exam_date" and value and isinstance(value, str):
+            # Convert string date to datetime
+            from datetime import datetime
+            try:
+                setattr(exam, field, datetime.fromisoformat(value.replace('Z', '+00:00')))
+            except ValueError:
+                # Try parsing as date only
+                setattr(exam, field, datetime.strptime(value[:10], "%Y-%m-%d"))
         else:
             setattr(exam, field, value)
     
@@ -283,6 +291,7 @@ async def publish_results(
     exam = await service.update_status(
         exam_id=str(exam_id),
         status=ExamStatus.RESULTS_PUBLISHED,
+        tenant_id=str(current_user.tenant_id),
     )
     
     if not exam:
@@ -391,6 +400,30 @@ async def enter_bulk_results(
         "success": True,
         **response,
     }
+
+
+@router.delete("/{exam_id}/results/{result_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_result(
+    exam_id: UUID,
+    result_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a single exam result."""
+    service = ExaminationService(db)
+    
+    try:
+        await service.delete_result(
+            examination_id=str(exam_id),
+            result_id=str(result_id),
+            tenant_id=str(current_user.tenant_id),
+        )
+        return None
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
 
 
 @router.get("/{exam_id}/statistics", response_model=ExamStatisticsResponse)

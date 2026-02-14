@@ -168,10 +168,14 @@ class ExaminationService:
         self,
         exam_id: str,
         status: ExamStatus,
+        tenant_id: str,
     ) -> Examination:
         """Update examination status."""
         result = await self.db.execute(
-            select(Examination).where(Examination.id == exam_id)
+            select(Examination).where(
+                Examination.id == exam_id,
+                Examination.tenant_id == tenant_id,
+            )
         )
         exam = result.scalar_one_or_none()
         
@@ -197,6 +201,25 @@ class ExaminationService:
         remarks: Optional[str] = None,
     ) -> ExamResult:
         """Enter or update a single exam result."""
+        # Get examination first for validation
+        exam_result = await self.db.execute(
+            select(Examination).where(
+                Examination.id == examination_id,
+                Examination.tenant_id == tenant_id,
+            )
+        )
+        exam = exam_result.scalar_one_or_none()
+        
+        if not exam:
+            raise ValueError("Examination not found")
+        
+        # Validate marks do not exceed max_marks
+        if marks_obtained is not None:
+            if marks_obtained < 0:
+                raise ValueError("Marks cannot be negative")
+            if marks_obtained > exam.max_marks:
+                raise ValueError(f"Marks cannot exceed maximum marks ({exam.max_marks})")
+        
         # Check if result exists
         existing_result = await self.db.execute(
             select(ExamResult).where(
@@ -205,12 +228,6 @@ class ExaminationService:
             )
         )
         result = existing_result.scalar_one_or_none()
-        
-        # Get examination for grade calculation
-        exam_result = await self.db.execute(
-            select(Examination).where(Examination.id == examination_id)
-        )
-        exam = exam_result.scalar_one_or_none()
         
         if result:
             # Update existing
@@ -237,8 +254,15 @@ class ExaminationService:
             self.db.add(result)
         
         # Calculate percentage and grade
-        if marks_obtained is not None and exam:
+        if marks_obtained is not None:
             result.percentage = (marks_obtained / exam.max_marks) * 100
+            
+            # Calculate pass/fail status
+            if exam.passing_marks is not None:
+                result.is_passed = marks_obtained >= exam.passing_marks
+            else:
+                # Default: 35% passing
+                result.is_passed = result.percentage >= 35
             
             # Get grade if scale is defined
             if exam.grade_scale_id:
@@ -248,6 +272,9 @@ class ExaminationService:
                         result.grade = level.grade
                         result.grade_point = level.grade_point
                         break
+        else:
+            # Absent or exempted - not passed unless exempted
+            result.is_passed = is_exempted
         
         await self.db.commit()
         await self.db.refresh(result)
@@ -262,28 +289,113 @@ class ExaminationService:
     ) -> Dict[str, Any]:
         """Enter multiple exam results."""
         entered = 0
+        updated = 0
         errors = []
         
         for result_data in results:
             try:
+                # Check if result exists
+                existing = await self.db.execute(
+                    select(ExamResult).where(
+                        ExamResult.examination_id == examination_id,
+                        ExamResult.student_id == result_data.get("student_id"),
+                    )
+                )
+                is_update = existing.scalar_one_or_none() is not None
+                
                 await self.enter_result(
                     tenant_id=tenant_id,
                     examination_id=examination_id,
                     entered_by_id=entered_by_id,
                     **result_data,
                 )
-                entered += 1
+                if is_update:
+                    updated += 1
+                else:
+                    entered += 1
             except Exception as e:
                 errors.append({
                     "student_id": str(result_data.get("student_id")),
                     "error": str(e),
                 })
         
+        # Calculate ranks after all results are entered
+        await self._calculate_ranks(examination_id)
+        
         return {
+            "success": True,
             "total": len(results),
-            "entered": entered,
+            "created": entered,
+            "updated": updated,
             "errors": errors,
         }
+    
+    async def _calculate_ranks(self, examination_id: str) -> None:
+        """Calculate and update ranks for all results in an examination."""
+        # Get all results ordered by marks (descending)
+        results_query = await self.db.execute(
+            select(ExamResult).where(
+                ExamResult.examination_id == examination_id,
+                ExamResult.is_absent == False,
+                ExamResult.marks_obtained.isnot(None),
+            ).order_by(ExamResult.marks_obtained.desc())
+        )
+        results = list(results_query.scalars().all())
+        
+        # Assign ranks (handle ties)
+        current_rank = 0
+        previous_marks = None
+        students_at_rank = 0
+        
+        for result in results:
+            students_at_rank += 1
+            if result.marks_obtained != previous_marks:
+                current_rank = students_at_rank
+                previous_marks = result.marks_obtained
+            result.rank = current_rank
+        
+        await self.db.commit()
+    
+    async def delete_result(
+        self,
+        examination_id: str,
+        result_id: str,
+        tenant_id: str,
+    ) -> bool:
+        """Delete a single exam result."""
+        result = await self.db.execute(
+            select(ExamResult).where(
+                ExamResult.id == result_id,
+                ExamResult.examination_id == examination_id,
+                ExamResult.tenant_id == tenant_id,
+            )
+        )
+        exam_result = result.scalar_one_or_none()
+        
+        if not exam_result:
+            raise ValueError("Result not found")
+        
+        await self.db.delete(exam_result)
+        await self.db.commit()
+        
+        # Recalculate ranks after deletion
+        await self._calculate_ranks(examination_id)
+        
+        return True
+    
+    async def get_result_by_id(
+        self,
+        result_id: str,
+        tenant_id: str,
+    ) -> Optional[ExamResult]:
+        """Get a single result by ID."""
+        result = await self.db.execute(
+            select(ExamResult).where(
+                ExamResult.id == result_id,
+                ExamResult.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
     
     async def get_results(
         self,
@@ -467,11 +579,20 @@ class ExaminationService:
         term: Optional[str] = None,
     ) -> StudentGPA:
         """Calculate and store GPA for a student."""
-        # Get all results for the period
-        query = select(ExamResult).where(
-            ExamResult.tenant_id == tenant_id,
-            ExamResult.student_id == student_id,
+        # Get all results for the period - JOIN with Examination to filter by academic_year
+        query = (
+            select(ExamResult)
+            .join(Examination, ExamResult.examination_id == Examination.id)
+            .where(
+                ExamResult.tenant_id == tenant_id,
+                ExamResult.student_id == student_id,
+                Examination.academic_year == academic_year,
+            )
         )
+        
+        # Filter by term if specified
+        if term:
+            query = query.where(Examination.term == term)
         
         result = await self.db.execute(query)
         exam_results = list(result.scalars().all())
@@ -479,13 +600,27 @@ class ExaminationService:
         # Calculate weighted GPA
         total_grade_points = 0
         total_credits = 0
+        earned_credits = 0
         
         for er in exam_results:
-            if er.grade_point is not None:
-                # Assuming each exam has equal credit (1.0) - can be customized
-                credit = 1.0
+            # Get exam to check weightage/credits
+            exam_detail = await self.db.execute(
+                select(Examination).where(Examination.id == er.examination_id)
+            )
+            exam = exam_detail.scalar_one_or_none()
+            
+            if exam and er.grade_point is not None:
+                # Use weightage as credit (default 1.0 if not specified)
+                credit = exam.weightage / 100 if exam.weightage else 1.0
                 total_grade_points += er.grade_point * credit
                 total_credits += credit
+                
+                # Count earned credits only for passing students
+                if exam.passing_marks and er.marks_obtained is not None:
+                    if er.marks_obtained >= exam.passing_marks:
+                        earned_credits += credit
+                else:
+                    earned_credits += credit  # If no passing marks defined, count as earned
         
         gpa = total_grade_points / total_credits if total_credits > 0 else 0
         
@@ -500,9 +635,9 @@ class ExaminationService:
         student_gpa = existing.scalar_one_or_none()
         
         if student_gpa:
-            student_gpa.gpa = gpa
-            student_gpa.total_credits = total_credits
-            student_gpa.earned_credits = total_credits
+            student_gpa.gpa = round(gpa, 2)
+            student_gpa.total_credits = round(total_credits, 2)
+            student_gpa.earned_credits = round(earned_credits, 2)
             student_gpa.is_calculated = True
             student_gpa.calculated_at = datetime.utcnow()
         else:
@@ -511,9 +646,9 @@ class ExaminationService:
                 student_id=student_id,
                 academic_year=academic_year,
                 term=term,
-                gpa=gpa,
-                total_credits=total_credits,
-                earned_credits=total_credits,
+                gpa=round(gpa, 2),
+                total_credits=round(total_credits, 2),
+                earned_credits=round(earned_credits, 2),
                 is_calculated=True,
                 calculated_at=datetime.utcnow(),
             )

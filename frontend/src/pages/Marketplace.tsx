@@ -89,7 +89,7 @@ const Marketplace: React.FC = () => {
                         WebkitTextFillColor: 'transparent',
                     }}
                 >
-                    Research & Development
+                    Learning & Development
                 </Typography>
 
                 <Typography

@@ -36,6 +36,10 @@ from .transport import (
     VehicleType, VehicleStatus, RouteStatus, TripType
 )
 from .settings import TenantSettings
+from .reminder import (
+    ReminderSettings, ReminderTemplate, ReminderLog,
+    NotificationChannel, ReminderStatus, ReminderTriggerType
+)
 
 __all__ = [
     # Base
@@ -142,6 +146,14 @@ __all__ = [
     
     # Academic
     "SchoolClass",
+    
+    # Reminder
+    "ReminderSettings",
+    "ReminderTemplate",
+    "ReminderLog",
+    "NotificationChannel",
+    "ReminderStatus",
+    "ReminderTriggerType",
 ]
 
 

@@ -71,7 +71,7 @@ class TimeSlot(TenantBaseModel, TimestampMixin):
     is_active = Column(Boolean, default=True)
     
     # Relationships
-    timetable_entries = relationship("TimetableEntry", back_populates="time_slot", lazy="dynamic")
+    timetable_entries = relationship("TimetableEntry", back_populates="time_slot", lazy="dynamic", cascade="all, delete-orphan")
     
     __table_args__ = (
         CheckConstraint('end_time > start_time', name='ck_time_slot_valid_time'),

@@ -25,6 +25,7 @@ from app.api.routes.student_portal import router as student_portal_router
 from app.api.routes.transport import router as transport_router
 from app.api.routes.settings import router as settings_router
 from app.api.v1.routes.academic import router as academic_router
+from app.api.routes.reminders import router as reminders_router
 
 from app.api.v1.super_admin.routes import router as super_admin_router
 
@@ -57,6 +58,7 @@ api_router.include_router(parent_portal_router, tags=["Parent Portal"])
 api_router.include_router(student_portal_router, tags=["Student Portal"])
 api_router.include_router(transport_router, tags=["Transport"])
 api_router.include_router(settings_router, tags=["Settings"])
+api_router.include_router(reminders_router, tags=["Reminders"])
 
 
 @api_router.get("/health")

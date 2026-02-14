@@ -3,15 +3,14 @@ import {
     Box, Typography, Paper, Grid, Button, Card, CardContent,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, Chip, Dialog, DialogTitle, DialogContent,
-    DialogActions, TextField, FormControl, InputLabel, Select, MenuItem,
-    Alert, Snackbar, CircularProgress, IconButton, FormControlLabel, Checkbox, Switch, Tooltip
+    DialogActions, TextField, FormControl, InputLabel, Select, MenuItem, DialogContentText,
+    Alert, Snackbar, CircularProgress, IconButton, FormControlLabel, Checkbox, Tooltip, Radio, RadioGroup, ListItemText
 } from '@mui/material';
 import {
     Add as AddIcon,
     Schedule as ScheduleIcon,
     Room as RoomIcon,
-    Event as EventIcon,
-    Warning as WarningIcon,
+
     Delete as DeleteIcon,
     Edit as EditIcon,
     DeleteSweep as DeleteSweepIcon,
@@ -66,9 +65,12 @@ const TimetablePage: React.FC = () => {
     const [entryDialogOpen, setEntryDialogOpen] = useState(false);
     const [slotDialogOpen, setSlotDialogOpen] = useState(false);
     const [roomDialogOpen, setRoomDialogOpen] = useState(false);
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
-    const [selectedClassName, setSelectedClassName] = useState('');
-    const [selectedSection, setSelectedSection] = useState('');
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' | 'warning' });
+    const [selectedClassId, setSelectedClassId] = useState('');
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [slotToDelete, setSlotToDelete] = useState<string | null>(null);
     const [importDialog, setImportDialog] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
     const [importResult, setImportResult] = useState<any>(null);
@@ -81,13 +83,18 @@ const TimetablePage: React.FC = () => {
     // API Queries - fetch all including inactive so they can be reactivated
     const { data: timeSlotsData, isLoading: slotsLoading } = useGetTimeSlotsQuery({ activeOnly: false });
     const { data: roomsData, isLoading: roomsLoading } = useGetRoomsQuery({ activeOnly: false });
+    const { data: classesData } = useGetClassesQuery();
+
+    // Derived state for selection
+    const selectedClass = classesData?.find(c => c.id === selectedClassId);
+
     const { data: entriesData, isLoading: entriesLoading, refetch } = useGetTimetableEntriesQuery({
-        className: selectedClassName || undefined,
-        section: selectedSection || undefined,
-    });
+        className: selectedClass?.name || undefined,
+        section: selectedClass?.section || undefined,
+    }, { skip: !selectedClassId }); // Skip if no class selected (optional, or let it fetch all if logic supports it, but usually better to wait)
     const { data: staffData } = useGetStaffQuery({ page: 1, page_size: 100, staff_type: 'teaching' });
     const { data: coursesData } = useGetCoursesQuery({ page: 1, page_size: 100 });
-    const { data: classesData } = useGetClassesQuery();
+
 
     // Mutations
     const [createEntry, { isLoading: creatingEntry }] = useCreateTimetableEntryMutation();
@@ -183,6 +190,8 @@ const TimetablePage: React.FC = () => {
         slot_type: 'class' as TimeSlotType,
         order: 0,
         is_active: true,
+        applied_to: 'all', // 'all' or 'specific'
+        selected_class_ids: [] as string[],
     });
 
     // Room form state
@@ -267,7 +276,25 @@ const TimetablePage: React.FC = () => {
             refetch();
         } catch (error: any) {
             const detail = error.data?.detail;
-            const message = typeof detail === 'object' ? detail.message || JSON.stringify(detail) : detail || 'Failed to save entry';
+            let message = 'Failed to save entry';
+
+            if (typeof detail === 'object') {
+                if (detail.conflicts && Array.isArray(detail.conflicts)) {
+                    // Format conflict messages
+                    const conflictMsgs = detail.conflicts.map((c: any) => {
+                        if (c.blocking_slot) {
+                            return `${c.message} (Blocked by ${c.blocking_subject || 'Entry'} in ${c.blocking_slot})`;
+                        }
+                        return c.message;
+                    });
+                    message = "Conflicts: " + conflictMsgs.join('; ');
+                } else {
+                    message = detail.message || JSON.stringify(detail);
+                }
+            } else if (typeof detail === 'string') {
+                message = detail;
+            }
+
             setSnackbar({ open: true, message, severity: 'error' });
         }
     };
@@ -277,7 +304,15 @@ const TimetablePage: React.FC = () => {
             setSnackbar({ open: true, message: 'Please fill all required fields', severity: 'error' });
             return;
         }
+        if (slotForm.start_time >= slotForm.end_time) {
+            setSnackbar({ open: true, message: 'End time must be greater than Start time', severity: 'error' });
+            return;
+        }
         try {
+            const applicableDaysPayload = slotForm.applied_to === 'specific'
+                ? { days: [1, 2, 3, 4, 5, 6], class_ids: slotForm.selected_class_ids }
+                : [1, 2, 3, 4, 5, 6]; // Default global
+
             if (editingSlot) {
                 // Update existing slot
                 await updateTimeSlot({
@@ -290,6 +325,7 @@ const TimetablePage: React.FC = () => {
                         slot_type: slotForm.slot_type,
                         order: slotForm.order,
                         is_active: slotForm.is_active,
+                        applicable_days: applicableDaysPayload as any,
                     }
                 }).unwrap();
                 setSnackbar({ open: true, message: 'Time slot updated successfully', severity: 'success' });
@@ -303,12 +339,13 @@ const TimetablePage: React.FC = () => {
                     slot_type: slotForm.slot_type,
                     order: slotForm.order,
                     is_active: slotForm.is_active,
-                }).unwrap();
+                    applicable_days: applicableDaysPayload,
+                } as any).unwrap(); // Cast to any to bypass strict type check for now if interface not updated
                 setSnackbar({ open: true, message: 'Time slot added successfully', severity: 'success' });
             }
             setSlotDialogOpen(false);
             setEditingSlot(null);
-            setSlotForm({ name: '', code: '', start_time: '08:00', end_time: '09:00', slot_type: 'class', order: 0, is_active: true });
+            setSlotForm({ name: '', code: '', start_time: '08:00', end_time: '09:00', slot_type: 'class', order: 0, is_active: true, applied_to: 'all', selected_class_ids: [] });
         } catch (error: any) {
             setSnackbar({ open: true, message: error.data?.detail || 'Failed to save slot', severity: 'error' });
         }
@@ -352,58 +389,12 @@ const TimetablePage: React.FC = () => {
         }
     };
 
-    const handleDeleteAllEntries = async (entry: TimetableEntry) => {
-        const allRelatedEntries = entriesData?.items?.filter(e =>
-            e.time_slot_id === entry.time_slot_id &&
-            e.subject_name === entry.subject_name &&
-            e.course_id === entry.course_id &&
-            e.class_name === entry.class_name &&
-            e.section === entry.section
-        ) || [];
 
-        if (allRelatedEntries.length === 0) return;
 
-        if (confirm(`Delete all ${allRelatedEntries.length} entries for "${entry.subject_name || entry.course?.name}" across all days?`)) {
-            try {
-                const promises = allRelatedEntries.map(e => deleteEntry(e.id).unwrap());
-                await Promise.all(promises);
-                setSnackbar({
-                    open: true,
-                    message: `Deleted ${allRelatedEntries.length} entries successfully`,
-                    severity: 'success'
-                });
-            } catch (error: any) {
-                setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete entries', severity: 'error' });
-            }
-        }
-    };
 
-    const handleDeleteSlot = async (id: string) => {
-        if (confirm('Are you sure you want to delete this time slot?')) {
-            try {
-                await deleteTimeSlot(id).unwrap();
-                setSnackbar({ open: true, message: 'Time slot deleted', severity: 'success' });
-            } catch (error: any) {
-                setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete', severity: 'error' });
-            }
-        }
-    };
 
-    const handleToggleSlotStatus = async (slot: TimeSlot) => {
-        try {
-            await updateTimeSlot({
-                id: slot.id,
-                data: { is_active: !slot.is_active }
-            }).unwrap();
-            setSnackbar({
-                open: true,
-                message: `Time slot ${slot.is_active ? 'deactivated' : 'activated'}`,
-                severity: 'success'
-            });
-        } catch (error: any) {
-            setSnackbar({ open: true, message: error.data?.detail || 'Failed to update status', severity: 'error' });
-        }
-    };
+
+
 
     const handleDeleteRoom = async (id: string) => {
         if (confirm('Are you sure you want to delete this room?')) {
@@ -412,6 +403,17 @@ const TimetablePage: React.FC = () => {
                 setSnackbar({ open: true, message: 'Room deleted', severity: 'success' });
             } catch (error: any) {
                 setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete', severity: 'error' });
+            }
+        }
+    };
+
+    const handleDeleteSingleEntry = async (entry: TimetableEntry) => {
+        if (confirm(`Delete entry "${entry.subject_name || entry.course?.name}" for ${dayNames[entry.day_of_week - 1]}?`)) {
+            try {
+                await deleteEntry(entry.id).unwrap();
+                setSnackbar({ open: true, message: 'Entry deleted successfully', severity: 'success' });
+            } catch (error: any) {
+                setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete entry', severity: 'error' });
             }
         }
     };
@@ -434,6 +436,20 @@ const TimetablePage: React.FC = () => {
 
     const handleEditSlot = (slot: TimeSlot) => {
         setEditingSlot(slot);
+
+        let appliedTo = 'all';
+        let selectedClassIds: string[] = [];
+
+        // Parse applicable_days to determine current setting
+        if (slot.applicable_days && !Array.isArray(slot.applicable_days)) {
+            // It's an object (Specific configuration)
+            const config: any = slot.applicable_days;
+            if (config.class_ids && Array.isArray(config.class_ids)) {
+                appliedTo = 'specific';
+                selectedClassIds = config.class_ids;
+            }
+        }
+
         setSlotForm({
             name: slot.name,
             code: slot.code || '',
@@ -442,6 +458,8 @@ const TimetablePage: React.FC = () => {
             slot_type: slot.slot_type,
             order: slot.order,
             is_active: slot.is_active ?? true,
+            applied_to: appliedTo,
+            selected_class_ids: selectedClassIds,
         });
         setSlotDialogOpen(true);
     };
@@ -456,6 +474,40 @@ const TimetablePage: React.FC = () => {
             building: room.building || '',
         });
         setRoomDialogOpen(true);
+    };
+
+    const handleClearTimetable = async () => {
+        if (!timeSlotsData?.items?.length) return;
+
+        if (confirm('Are you sure you want to clear the entire timetable? This will DELETE ALL PERIODS and their entries. This action cannot be undone.')) {
+            try {
+                // Delete all slots
+                const promises = timeSlotsData.items.map(slot => deleteTimeSlot(slot.id).unwrap());
+                await Promise.all(promises);
+                setSnackbar({ open: true, message: 'Timetable structure cleared successfully', severity: 'success' });
+            } catch (error: any) {
+                setSnackbar({ open: true, message: error.data?.detail || 'Failed to clear timetable', severity: 'error' });
+            }
+        }
+    };
+
+    const handleDeleteRowClick = (slotId: string) => {
+        setSlotToDelete(slotId);
+        setDeleteConfirmOpen(true);
+    };
+
+    const confirmDeleteRow = async () => {
+        if (slotToDelete) {
+            try {
+                await deleteTimeSlot(slotToDelete).unwrap();
+                setSnackbar({ open: true, message: 'Period deleted successfully', severity: 'success' });
+            } catch (error: any) {
+                setSnackbar({ open: true, message: error.data?.detail || 'Failed to delete period', severity: 'error' });
+            } finally {
+                setDeleteConfirmOpen(false);
+                setSlotToDelete(null);
+            }
+        }
     };
 
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -478,137 +530,307 @@ const TimetablePage: React.FC = () => {
             }
         });
 
+        // Filter Time Slots based on Selected Class
+        let filteredSlots = [...timeSlotsData.items];
+
+        if (selectedClass) {
+            filteredSlots = filteredSlots.filter(slot => {
+                // If applicable_days is an array, it applies to all (Global)
+                if (Array.isArray(slot.applicable_days)) return true;
+
+                // If it's an object with class_ids
+                if (slot.applicable_days && !Array.isArray(slot.applicable_days)) {
+                    const config: any = slot.applicable_days;
+                    if (config.class_ids && Array.isArray(config.class_ids)) {
+                        return config.class_ids.includes(selectedClass.id);
+                    }
+                }
+
+                // Default fallback (e.g. if field missing, assume global or hide? Safe to assume global for backward compat)
+                return true;
+            });
+        }
+
         // Sort time slots by order
-        const sortedSlots = [...timeSlotsData.items].sort((a, b) => a.order - b.order);
+        const sortedSlots = filteredSlots.sort((a, b) => a.order - b.order);
 
         return { timeSlots: sortedSlots, grid };
     };
 
     const { timeSlots, grid } = buildTimetableGrid();
 
-    const getSlotTypeColor = (slotType: string) => {
-        switch (slotType) {
-            case 'class': return 'primary';
-            case 'break': return 'warning';
-            case 'lunch': return 'info';
-            case 'assembly': return 'secondary';
-            case 'exam': return 'error';
-            default: return 'default';
+
+
+
+    const selectedClassTeacher = staffData?.items?.find(s => s.id === selectedClass?.class_teacher_id);
+
+    const handleCellClick = (day: number, slot: TimeSlot, entry?: TimetableEntry) => {
+        if (entry) {
+            handleEditEntry(entry);
+        } else {
+            if (!selectedClass) {
+                toast.info("Please select a Class first");
+                return;
+            }
+            // Pre-fill form for new entry
+            setEntryForm({
+                ...entryForm,
+                time_slot_id: slot.id,
+                day_of_week: day,
+                class_name: selectedClass.name,
+                section: selectedClass.section,
+                // Reset other fields
+                course_id: '',
+                subject_name: '',
+                teacher_id: '',
+                room_id: '',
+            });
+            setEntryDialogOpen(true);
         }
     };
 
+
+
     const renderTimetableGrid = () => (
-        <TableContainer component={Paper} sx={{ mt: 2 }}>
-            <Table size="small">
-                <TableHead>
-                    <TableRow sx={{ backgroundColor: 'primary.main' }}>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Time</TableCell>
-                        {dayNames.map(day => (
-                            <TableCell key={day} align="center" sx={{ color: 'white', fontWeight: 'bold' }}>
-                                {day}
-                            </TableCell>
-                        ))}
-                    </TableRow>
-                </TableHead>
-                <TableBody>
-                    {entriesLoading || slotsLoading ? (
-                        <TableRow>
-                            <TableCell colSpan={7} align="center">
-                                <CircularProgress size={24} />
-                            </TableCell>
-                        </TableRow>
-                    ) : timeSlots.length === 0 ? (
-                        <TableRow>
-                            <TableCell colSpan={7} align="center">
-                                <Alert severity="info">
-                                    No time slots configured. Add time slots in the "Time Slots" tab.
-                                </Alert>
-                            </TableCell>
-                        </TableRow>
-                    ) : (
-                        timeSlots.map(slot => (
-                            <TableRow
-                                key={slot.id}
-                                sx={{
-                                    backgroundColor: ['break', 'lunch', 'assembly'].includes(slot.slot_type) ? 'grey.100' : 'inherit'
-                                }}
-                            >
-                                <TableCell sx={{ fontWeight: 'bold', minWidth: 100 }}>
-                                    <Typography variant="body2" fontWeight="bold">{slot.name}</Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {slot.start_time} - {slot.end_time}
-                                    </Typography>
+        <Box>
+            {/* Class Info Header */}
+            {selectedClass && (
+                <Paper sx={{ p: 2, mb: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                    <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} sm={4}>
+                            <Typography variant="h6" fontWeight="bold">
+                                Class: {selectedClass.name} - {selectedClass.section}
+                            </Typography>
+                        </Grid>
+                        <Grid item xs={12} sm={8}>
+                            <Typography variant="h6">
+                                Class Teacher: {selectedClassTeacher ? `${selectedClassTeacher.first_name} ${selectedClassTeacher.last_name}` : 'Not Assigned'}
+                            </Typography>
+                        </Grid>
+                    </Grid>
+                </Paper>
+            )}
+
+            <TableContainer component={Paper} sx={{ mt: 2 }}>
+                <Table size="small" sx={{
+                    borderCollapse: 'separate',
+                    borderSpacing: '0 2px',
+                    '& .MuiTableCell-root': { borderLeft: '1px solid rgba(224, 224, 224, 1)' }
+                }}>
+                    <TableHead>
+                        <TableRow sx={{
+                            backgroundColor: 'primary.main',
+                            '& th': {
+                                color: 'white',
+                                fontWeight: 'bold',
+                                fontSize: '0.95rem',
+                                py: 2
+                            }
+                        }}>
+                            <TableCell align="center" sx={{ width: '60px' }}>#</TableCell>
+                            <TableCell align="center" sx={{ width: '130px' }}>Time</TableCell>
+                            {dayNames.map(day => (
+                                <TableCell key={day} align="center">
+                                    {day}
                                 </TableCell>
-                                {dayNames.map((_, dayIndex) => {
-                                    const entry = grid[dayIndex + 1]?.[slot.id];
-                                    if (['break', 'lunch', 'assembly'].includes(slot.slot_type)) {
-                                        return (
-                                            <TableCell key={dayIndex} align="center" sx={{ bgcolor: 'grey.200' }}>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {slot.name}
-                                                </Typography>
-                                            </TableCell>
-                                        );
-                                    }
-                                    return (
-                                        <TableCell key={dayIndex} align="center" sx={{ minWidth: 120, p: 1 }}>
-                                            {entry ? (
-                                                <Box sx={{
-                                                    position: 'relative',
-                                                    '&:hover .action-buttons': { opacity: 1 }
-                                                }}>
-                                                    <Typography variant="body2" fontWeight="bold" color="primary">
-                                                        {entry.subject_name || entry.course?.name || 'Subject'}
-                                                    </Typography>
-                                                    <Typography variant="caption" display="block" color="text.secondary">
-                                                        {entry.teacher?.first_name} {entry.teacher?.last_name}
-                                                    </Typography>
-                                                    <Chip size="small" label={entry.room?.name || 'Room'} sx={{ mt: 0.5 }} />
-                                                    <Box
-                                                        className="action-buttons"
-                                                        sx={{
-                                                            display: 'flex',
-                                                            justifyContent: 'center',
-                                                            gap: 0.5,
-                                                            mt: 1,
-                                                            opacity: 0,
-                                                            transition: 'opacity 0.2s',
-                                                        }}
-                                                    >
-                                                        <Tooltip title="Edit Entry">
-                                                            <IconButton
-                                                                size="small"
-                                                                color="primary"
-                                                                onClick={() => handleEditEntry(entry)}
-                                                                sx={{ bgcolor: 'primary.light', '&:hover': { bgcolor: 'primary.main', color: 'white' } }}
-                                                            >
-                                                                <EditIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        <Tooltip title="Delete All Week">
-                                                            <IconButton
-                                                                size="small"
-                                                                color="error"
-                                                                onClick={() => handleDeleteAllEntries(entry)}
-                                                                sx={{ bgcolor: 'error.light', '&:hover': { bgcolor: 'error.main', color: 'white' } }}
-                                                            >
-                                                                <DeleteSweepIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    </Box>
-                                                </Box>
-                                            ) : (
-                                                <Typography variant="caption" color="text.disabled">-</Typography>
-                                            )}
-                                        </TableCell>
-                                    );
-                                })}
+                            ))}
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {entriesLoading || slotsLoading ? (
+                            <TableRow>
+                                <TableCell colSpan={9} align="center">
+                                    <CircularProgress size={24} />
+                                </TableCell>
                             </TableRow>
-                        ))
-                    )}
-                </TableBody>
-            </Table>
-        </TableContainer>
+                        ) : timeSlots.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={9} align="center">
+                                    <Alert severity="info">
+                                        No time slots configured. Please configure time slots first.
+                                    </Alert>
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            timeSlots.map((slot, index) => {
+                                const isBreak = ['break', 'lunch', 'assembly'].includes(slot.slot_type);
+                                return (
+                                    <TableRow
+                                        key={slot.id}
+                                        sx={{
+                                            backgroundColor: isBreak ? 'warning.light' : (index % 2 === 0 ? 'action.hover' : 'inherit'),
+                                            '&:hover': { backgroundColor: 'action.selected' }
+                                        }}
+                                    >
+                                        <TableCell
+                                            align="center"
+                                            sx={{
+                                                fontWeight: 'bold',
+                                                position: 'relative',
+                                                height: '100%',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                const btn = e.currentTarget.querySelector('.delete-row-btn') as HTMLElement;
+                                                if (btn) btn.style.opacity = '1';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                const btn = e.currentTarget.querySelector('.delete-row-btn') as HTMLElement;
+                                                if (btn) btn.style.opacity = '0';
+                                            }}
+                                        >
+                                            {/* Simple Index */}
+                                            {index + 1}
+
+                                            {/* Delete Row Action */}
+                                            <IconButton
+                                                className="delete-row-btn"
+                                                size="small"
+                                                color="error"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteRowClick(slot.id);
+                                                }}
+                                                sx={{
+                                                    opacity: 0,
+                                                    transition: 'opacity 0.2s',
+                                                    position: 'absolute',
+                                                    left: '4px',
+                                                    top: '50%',
+                                                    transform: 'translateY(-50%)',
+                                                    bgcolor: 'rgba(255,255,255,0.95)',
+                                                    boxShadow: 1,
+                                                    '&:hover': { bgcolor: 'white', opacity: 1 },
+                                                    zIndex: 10
+                                                }}
+                                            >
+                                                <DeleteIcon fontSize="small" />
+                                            </IconButton>
+                                        </TableCell>
+                                        <TableCell
+                                            align="center"
+                                            onClick={() => handleEditSlot(slot)}
+                                            sx={{
+                                                whiteSpace: 'nowrap',
+                                                cursor: 'pointer',
+                                                '&:hover': { textDecoration: 'underline', color: 'primary.main' }
+                                            }}
+                                        >
+                                            {slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)}
+                                        </TableCell>
+
+                                        {dayNames.map((_, dayIndex) => {
+                                            const dayNum = dayIndex + 1;
+                                            const entry = grid[dayNum]?.[slot.id];
+
+                                            if (isBreak) {
+                                                return (
+                                                    <TableCell key={dayIndex} align="center" sx={{ bgcolor: 'warning.light', color: 'warning.contrastText', fontWeight: 'bold', letterSpacing: 1 }}>
+                                                        {slot.name.toUpperCase()}
+                                                    </TableCell>
+                                                );
+                                            }
+
+                                            return (
+                                                <TableCell
+                                                    key={dayIndex}
+                                                    align="center"
+                                                    onClick={() => handleCellClick(dayNum, slot, entry)}
+                                                    sx={{
+                                                        minWidth: 120,
+                                                        p: 0.5,
+                                                        height: '80px',
+                                                        verticalAlign: 'middle',
+                                                        cursor: selectedClass ? 'pointer' : 'default',
+                                                        backgroundColor: entry ? 'primary.50' : 'inherit',
+                                                        '&:hover': { backgroundColor: selectedClass ? 'action.selected' : 'inherit' }
+                                                    }}
+                                                >
+                                                    {entry ? (
+                                                        <Box sx={{
+                                                            position: 'relative',
+                                                            height: '100%',
+                                                            minHeight: '80px',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            justifyContent: 'center',
+                                                            bgcolor: 'primary.light',
+                                                            color: 'primary.contrastText',
+                                                            borderRadius: 2,
+                                                            p: 1,
+                                                            boxShadow: 2,
+                                                            transition: 'all 0.2s',
+                                                            '&:hover': {
+                                                                transform: 'translateY(-2px)',
+                                                                boxShadow: 4,
+                                                                '& .action-buttons': { opacity: 1 }
+                                                            }
+                                                        }}>
+                                                            <Typography variant="subtitle2" fontWeight="bold">
+                                                                {entry.subject_name || entry.course?.name || 'Subject'}
+                                                            </Typography>
+                                                            <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                                                                {(() => {
+                                                                    if (entry.teacher && entry.teacher.first_name) {
+                                                                        return `(${entry.teacher.first_name} ${entry.teacher.last_name})`;
+                                                                    }
+                                                                    const foundTeacher = staffData?.items?.find((s: any) => s.id === entry.teacher_id);
+                                                                    if (foundTeacher) {
+                                                                        return `(${foundTeacher.first_name} ${foundTeacher.last_name})`;
+                                                                    }
+                                                                    return '(No Teacher)';
+                                                                })()}
+                                                            </Typography>
+
+                                                            {/* Only show Room if it's not the default class room (optional refinement, showing always for now) */}
+                                                            {/* <Typography variant="caption" display="block" color="text.secondary">
+                                                                [{entry.room?.name}]
+                                                            </Typography> */}
+
+                                                            <Box
+                                                                className="action-buttons"
+                                                                sx={{
+                                                                    position: 'absolute',
+                                                                    top: -4,
+                                                                    right: -4,
+                                                                    display: 'flex',
+                                                                    opacity: 0,
+                                                                    transition: 'opacity 0.2s',
+                                                                    bgcolor: 'background.paper',
+                                                                    borderRadius: '50%',
+                                                                    boxShadow: 2
+                                                                }}
+                                                            >
+                                                                <Tooltip title="Delete Entry">
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        color="error"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDeleteSingleEntry(entry);
+                                                                        }}
+                                                                        sx={{ p: 0.5 }}
+                                                                    >
+                                                                        <DeleteIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                            </Box>
+                                                        </Box>
+                                                    ) : (
+                                                        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <AddIcon sx={{ opacity: 0, transition: 'opacity 0.2s', '.MuiTableCell-root:hover &': { opacity: 0.3 } }} />
+                                                        </Box>
+                                                    )}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                );
+                            })
+                        )}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+        </Box>
     );
 
     return (
@@ -629,26 +851,36 @@ const TimetablePage: React.FC = () => {
                             <FileDownloadIcon />
                         </IconButton>
                     </Tooltip>
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel>Class</InputLabel>
-                        <Select value={selectedClassName} label="Class" onChange={(e) => setSelectedClassName(e.target.value)}>
-                            <MenuItem value="">All Classes</MenuItem>
+                    <Tooltip title="Clear All Periods">
+                        <span>
+                            <IconButton onClick={handleClearTimetable} color="error" disabled={!timeSlotsData?.items?.length}>
+                                <DeleteSweepIcon />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                    <FormControl size="small" sx={{ minWidth: 200 }}>
+                        <InputLabel>Select Class</InputLabel>
+                        <Select
+                            value={selectedClassId}
+                            label="Select Class"
+                            onChange={(e) => setSelectedClassId(e.target.value)}
+                        >
+                            <MenuItem value="">
+                                <em>None</em>
+                            </MenuItem>
                             {classesData?.map(cls => (
-                                <MenuItem key={cls.id} value={cls.name}>{cls.name}</MenuItem>
+                                <MenuItem key={cls.id} value={cls.id}>
+                                    {cls.name} {cls.section ? `- ${cls.section}` : ''}
+                                </MenuItem>
                             ))}
                         </Select>
                     </FormControl>
-                    <FormControl size="small" sx={{ minWidth: 100 }}>
-                        <InputLabel>Section</InputLabel>
-                        <Select value={selectedSection} label="Section" onChange={(e) => setSelectedSection(e.target.value)}>
-                            <MenuItem value="">All</MenuItem>
-                            <MenuItem value="A">A</MenuItem>
-                            <MenuItem value="B">B</MenuItem>
-                            <MenuItem value="C">C</MenuItem>
-                        </Select>
-                    </FormControl>
-                    <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEntryDialogOpen(true)}>
-                        Add Entry
+                    <Button variant="contained" startIcon={<AddIcon />} onClick={() => {
+                        const maxOrder = timeSlotsData?.items?.reduce((max: number, slot: any) => Math.max(max, slot.order || 0), 0) || 0;
+                        setSlotForm({ ...slotForm, order: maxOrder + 1 });
+                        setSlotDialogOpen(true);
+                    }}>
+                        Add Period
                     </Button>
                 </Box>
             </Box>
@@ -657,13 +889,11 @@ const TimetablePage: React.FC = () => {
                 <Tabs value={tabValue} onChange={handleTabChange}>
                     <Tab icon={<ScheduleIcon />} label="Class Timetable" />
                     <Tab icon={<RoomIcon />} label="Rooms" />
-                    <Tab icon={<EventIcon />} label="Time Slots" />
-                    <Tab icon={<WarningIcon />} label="Conflicts" />
                 </Tabs>
 
                 <TabPanel value={tabValue} index={0}>
                     <Typography variant="h6" gutterBottom>
-                        {selectedClassName ? `${selectedClassName}${selectedSection ? ` - Section ${selectedSection}` : ''} - Weekly Schedule` : 'All Classes - Weekly Schedule'}
+                        {selectedClass ? `${selectedClass.name} - ${selectedClass.section} Weekly Schedule` : 'Select a class to view timetable'}
                     </Typography>
                     {renderTimetableGrid()}
                 </TabPanel>
@@ -728,84 +958,7 @@ const TimetablePage: React.FC = () => {
                     )}
                 </TabPanel>
 
-                <TabPanel value={tabValue} index={2}>
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setSlotDialogOpen(true)}>
-                            Add Time Slot
-                        </Button>
-                    </Box>
-                    {slotsLoading ? (
-                        <CircularProgress />
-                    ) : timeSlotsData?.items?.length === 0 ? (
-                        <Alert severity="info">No time slots configured. Add time slots to get started.</Alert>
-                    ) : (
-                        <TableContainer component={Paper}>
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Order</TableCell>
-                                        <TableCell>Period</TableCell>
-                                        <TableCell>Code</TableCell>
-                                        <TableCell>Start Time</TableCell>
-                                        <TableCell>End Time</TableCell>
-                                        <TableCell>Type</TableCell>
-                                        <TableCell>Status</TableCell>
-                                        <TableCell>Actions</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {[...timeSlotsData?.items || []].sort((a, b) => a.order - b.order).map(slot => (
-                                        <TableRow key={slot.id}>
-                                            <TableCell>{slot.order}</TableCell>
-                                            <TableCell>{slot.name}</TableCell>
-                                            <TableCell>{slot.code || '-'}</TableCell>
-                                            <TableCell>{slot.start_time}</TableCell>
-                                            <TableCell>{slot.end_time}</TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={slot.slot_type}
-                                                    color={getSlotTypeColor(slot.slot_type)}
-                                                    size="small"
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Tooltip title={slot.is_active ? 'Click to deactivate' : 'Click to activate'}>
-                                                    <Switch
-                                                        checked={slot.is_active}
-                                                        onChange={() => handleToggleSlotStatus(slot)}
-                                                        color="success"
-                                                        size="small"
-                                                    />
-                                                </Tooltip>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Tooltip title="Edit">
-                                                    <IconButton size="small" onClick={() => handleEditSlot(slot)} sx={{ mr: 0.5 }}>
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Delete">
-                                                    <IconButton size="small" onClick={() => handleDeleteSlot(slot.id)}>
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    )}
-                </TabPanel>
 
-                <TabPanel value={tabValue} index={3}>
-                    <Alert severity="success" sx={{ mb: 2 }}>
-                        No scheduling conflicts detected!
-                    </Alert>
-                    <Typography variant="body2" color="text.secondary">
-                        The system automatically checks for room, teacher, and class conflicts when adding new entries.
-                    </Typography>
-                </TabPanel>
             </Paper>
 
             {/* Import Dialog */}
@@ -867,81 +1020,42 @@ const TimetablePage: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            {/* Add/Edit Entry Dialog */}
+            {/* Add/Edit Entry Dialog - Simplified */}
             <Dialog open={entryDialogOpen} onClose={() => {
                 setEntryDialogOpen(false);
                 setEditingEntry(null);
-            }} maxWidth="sm" fullWidth>
-                <DialogTitle>{editingEntry ? 'Edit Timetable Entry' : 'Add Timetable Entry'}</DialogTitle>
+            }} maxWidth="xs" fullWidth>
+                <DialogTitle>{editingEntry ? 'Edit Class' : 'Select Subject'}</DialogTitle>
                 <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12}>
                             <FormControl fullWidth>
-                                <InputLabel>Subject/Course</InputLabel>
+                                <InputLabel>Course</InputLabel>
                                 <Select
-                                    label="Subject/Course"
+                                    label="Course"
                                     value={entryForm.course_id}
-                                    onChange={(e) => setEntryForm({ ...entryForm, course_id: e.target.value })}
+                                    onChange={(e) => {
+                                        const selectedCourseId = e.target.value;
+                                        const selectedCourse = coursesData?.items?.find((c: any) => c.id === selectedCourseId);
+                                        setEntryForm({
+                                            ...entryForm,
+                                            course_id: selectedCourseId,
+                                            subject_name: selectedCourse ? selectedCourse.name : ''
+                                        });
+                                    }}
                                 >
-                                    <MenuItem value="">-- Select or type below --</MenuItem>
+                                    <MenuItem value="">-- Select Course --</MenuItem>
                                     {coursesData?.items?.map((course: any) => (
-                                        <MenuItem key={course.id} value={course.id}>
-                                            {course.name} ({course.code})
-                                        </MenuItem>
+                                        <MenuItem key={course.id} value={course.id}>{course.name}</MenuItem>
                                     ))}
                                 </Select>
                             </FormControl>
                         </Grid>
+
+                        {/* Hidden/Implicit fields */}
+                        {/* Course ID is managed implicitly if matching name found, or just use subject_name string for simplicity as requested */}
+
                         <Grid item xs={12}>
-                            <TextField
-                                fullWidth
-                                label="Or Subject Name (if not from list)"
-                                value={entryForm.subject_name}
-                                onChange={(e) => setEntryForm({ ...entryForm, subject_name: e.target.value })}
-                                placeholder="e.g., Mathematics"
-                            />
-                        </Grid>
-                        <Grid item xs={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Day of Week *</InputLabel>
-                                <Select
-                                    label="Day of Week *"
-                                    value={entryForm.day_of_week}
-                                    onChange={(e) => setEntryForm({ ...entryForm, day_of_week: e.target.value as number })}
-                                >
-                                    {dayNames.map((day, idx) => (
-                                        <MenuItem key={day} value={idx + 1}>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Chip
-                                                    label={day.substring(0, 3).toUpperCase()}
-                                                    size="small"
-                                                    color={idx < 5 ? 'primary' : idx === 5 ? 'warning' : 'default'}
-                                                    sx={{ minWidth: 45 }}
-                                                />
-                                                <Typography>{day}</Typography>
-                                            </Box>
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Period *</InputLabel>
-                                <Select
-                                    label="Period *"
-                                    value={entryForm.time_slot_id}
-                                    onChange={(e) => setEntryForm({ ...entryForm, time_slot_id: e.target.value })}
-                                >
-                                    {timeSlotsData?.items?.filter(s => s.slot_type === 'class').map(slot => (
-                                        <MenuItem key={slot.id} value={slot.id}>
-                                            {slot.name} ({slot.start_time} - {slot.end_time})
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={6}>
                             <FormControl fullWidth>
                                 <InputLabel>Teacher</InputLabel>
                                 <Select
@@ -949,7 +1063,7 @@ const TimetablePage: React.FC = () => {
                                     value={entryForm.teacher_id}
                                     onChange={(e) => setEntryForm({ ...entryForm, teacher_id: e.target.value })}
                                 >
-                                    <MenuItem value="">-- Optional --</MenuItem>
+                                    <MenuItem value="">-- Default / Class Teacher --</MenuItem>
                                     {staffData?.items?.map((staff: any) => (
                                         <MenuItem key={staff.id} value={staff.id}>
                                             {staff.first_name} {staff.last_name}
@@ -958,101 +1072,8 @@ const TimetablePage: React.FC = () => {
                                 </Select>
                             </FormControl>
                         </Grid>
-                        <Grid item xs={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Room</InputLabel>
-                                <Select
-                                    label="Room"
-                                    value={entryForm.room_id}
-                                    onChange={(e) => setEntryForm({ ...entryForm, room_id: e.target.value })}
-                                >
-                                    <MenuItem value="">-- Optional --</MenuItem>
-                                    {roomsData?.items?.map(room => (
-                                        <MenuItem key={room.id} value={room.id}>{room.name}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={6}>
-                            <FormControl fullWidth>
-                                <InputLabel>Class</InputLabel>
-                                <Select
-                                    label="Class"
-                                    value={entryForm.class_name}
-                                    onChange={(e) => setEntryForm({ ...entryForm, class_name: e.target.value })}
-                                >
-                                    <MenuItem value="">-- Select --</MenuItem>
-                                    {classesData?.map(cls => (
-                                        <MenuItem key={cls.id} value={cls.name}>{cls.name}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={6}>
-                            <TextField
-                                fullWidth
-                                label="Section"
-                                value={entryForm.section}
-                                onChange={(e) => setEntryForm({ ...entryForm, section: e.target.value })}
-                                placeholder="e.g., A"
-                            />
-                        </Grid>
-                        {!editingEntry && (
-                            <Grid item xs={12}>
-                                <Box sx={{
-                                    mt: 2,
-                                    p: 2.5,
-                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                    borderRadius: 2,
-                                    boxShadow: 2
-                                }}>
-                                    <FormControlLabel
-                                        control={
-                                            <Checkbox
-                                                checked={applyToAllWeekdays}
-                                                onChange={(e) => setApplyToAllWeekdays(e.target.checked)}
-                                                sx={{
-                                                    color: 'white',
-                                                    '&.Mui-checked': { color: 'white' }
-                                                }}
-                                            />
-                                        }
-                                        label={
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                                <Typography variant="body1" fontWeight="600" color="white">
-                                                    Apply to all weekdays (Mon-Sat)
-                                                </Typography>
-                                                <Chip
-                                                    label="Bulk Create"
-                                                    size="small"
-                                                    sx={{
-                                                        bgcolor: 'success.main',
-                                                        color: 'white',
-                                                        fontWeight: 'bold'
-                                                    }}
-                                                />
-                                            </Box>
-                                        }
-                                    />
-                                    {applyToAllWeekdays && (
-                                        <Alert
-                                            severity="info"
-                                            sx={{
-                                                mt: 1.5,
-                                                bgcolor: 'rgba(255,255,255,0.95)',
-                                                '& .MuiAlert-icon': {
-                                                    color: 'info.main'
-                                                }
-                                            }}
-                                        >
-                                            <Typography variant="body2" fontWeight="500">
-                                                📅 This will create 6 identical entries (Monday through Saturday)
-                                            </Typography>
-                                        </Alert>
-                                    )}
-                                </Box>
-                            </Grid>
-                        )}
+
+                        {/* Additional fields hidden for simplicity */}
                     </Grid>
                 </DialogContent>
                 <DialogActions>
@@ -1061,7 +1082,7 @@ const TimetablePage: React.FC = () => {
                         setEditingEntry(null);
                     }}>Cancel</Button>
                     <Button variant="contained" onClick={handleAddEntry} disabled={creatingEntry || updatingEntry}>
-                        {editingEntry ? (updatingEntry ? 'Updating...' : 'Update Entry') : (creatingEntry ? 'Adding...' : 'Add Entry')}
+                        Save
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -1119,6 +1140,39 @@ const TimetablePage: React.FC = () => {
                             />
                         </Grid>
                         <Grid item xs={12}>
+                            <FormControl component="fieldset">
+                                <Typography variant="subtitle2" gutterBottom>Applies To</Typography>
+                                <RadioGroup
+                                    row
+                                    value={slotForm.applied_to}
+                                    onChange={(e) => setSlotForm({ ...slotForm, applied_to: e.target.value })}
+                                >
+                                    <FormControlLabel value="all" control={<Radio />} label="All Classes" />
+                                    <FormControlLabel value="specific" control={<Radio />} label="Specific Classes" />
+                                </RadioGroup>
+                            </FormControl>
+                        </Grid>
+                        {slotForm.applied_to === 'specific' && (
+                            <Grid item xs={12}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel>Select Classes</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={slotForm.selected_class_ids}
+                                        onChange={(e) => setSlotForm({ ...slotForm, selected_class_ids: typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value })}
+                                        renderValue={(selected) => selected.length + ' classes selected'}
+                                    >
+                                        {classesData?.map((cls) => (
+                                            <MenuItem key={cls.id} value={cls.id}>
+                                                <Checkbox checked={slotForm.selected_class_ids.indexOf(cls.id) > -1} />
+                                                <ListItemText primary={`${cls.name} ${cls.section ? '- ' + cls.section : ''}`} />
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        )}
+                        <Grid item xs={6}>
                             <FormControl fullWidth>
                                 <InputLabel>Slot Type</InputLabel>
                                 <Select
@@ -1141,6 +1195,27 @@ const TimetablePage: React.FC = () => {
                     <Button onClick={() => setSlotDialogOpen(false)}>Cancel</Button>
                     <Button variant="contained" onClick={handleAddSlot} disabled={creatingSlot}>
                         {creatingSlot ? 'Adding...' : 'Add Slot'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Confirmation Dialog for Row Deletion */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+            >
+                <DialogTitle>Confirm Deletion</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        Are you sure you want to delete this Period? This will delete the time slot and all associated entries (Subjects) for all days. This action cannot be undone.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteConfirmOpen(false)} color="primary">
+                        Cancel
+                    </Button>
+                    <Button onClick={confirmDeleteRow} color="error" variant="contained" autoFocus>
+                        Delete Period
                     </Button>
                 </DialogActions>
             </Dialog>

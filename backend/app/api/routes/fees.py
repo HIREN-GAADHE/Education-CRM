@@ -13,7 +13,7 @@ import math
 import logging
 
 from app.config.database import get_db
-from app.models import FeePayment, PaymentStatus, Student, Tenant
+from app.models import FeePayment, PaymentStatus, Student, Tenant, SchoolClass
 from app.models.user import User
 from app.core.permissions import require_permission
 from app.core.middleware.auth import get_current_user
@@ -39,6 +39,8 @@ class StudentInfo(BaseModel):
     first_name: str
     last_name: str
     course: Optional[str] = None
+    
+    class_details: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -124,19 +126,32 @@ async def list_fee_payments(
     student_id: Optional[UUID] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     fee_type: Optional[str] = None,
+    class_id: Optional[UUID] = None,
+    academic_year: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List all fee payments with pagination and filtering."""
     try:
         # Include student relationship with tenant filter
-        query = select(FeePayment).where(
-            FeePayment.tenant_id == current_user.tenant_id  # Tenant isolation
-        ).options(selectinload(FeePayment.student))
+        query = select(FeePayment).join(Student).where(
+            FeePayment.tenant_id == current_user.tenant_id,  # Tenant isolation
+            FeePayment.is_deleted == False,  # Exclude soft-deleted fees
+            Student.is_deleted == False  # Exclude fees from deleted students
+        ).options(
+            selectinload(FeePayment.student).selectinload(Student.school_class)
+        )
         
         # Apply filters
         if student_id:
             query = query.where(FeePayment.student_id == student_id)
+        
+        if class_id:
+            query = query.where(Student.class_id == class_id)
+
+
+        if academic_year:
+            query = query.where(FeePayment.academic_year == academic_year)
         
         if status_filter:
             query = query.where(FeePayment.status == status_filter)
@@ -145,11 +160,17 @@ async def list_fee_payments(
             query = query.where(FeePayment.fee_type == fee_type)
         
         # Get total count with tenant filter
-        count_query = select(func.count(FeePayment.id)).where(
-            FeePayment.tenant_id == current_user.tenant_id
+        count_query = select(func.count(FeePayment.id)).join(Student).where(
+            FeePayment.tenant_id == current_user.tenant_id,
+            FeePayment.is_deleted == False,
+            Student.is_deleted == False
         )
         if student_id:
             count_query = count_query.where(FeePayment.student_id == student_id)
+        if class_id:
+            count_query = count_query.where(Student.class_id == class_id)
+        if academic_year:
+            count_query = count_query.where(FeePayment.academic_year == academic_year)
         if status_filter:
             count_query = count_query.where(FeePayment.status == status_filter)
         if fee_type:
@@ -164,8 +185,74 @@ async def list_fee_payments(
         result = await db.execute(query)
         payments = result.scalars().unique().all()
         
+        items = []
+        for p in payments:
+            # Populate class_details and student info manually
+            student_info = None
+            if p.student:
+                s = p.student
+                c_details = None
+                if s.school_class:
+                    c_details = f"{s.school_class.name} - {s.school_class.section}"
+                
+                try:
+                    student_info = StudentInfo(
+                        id=s.id,
+                        admission_number=s.admission_number or "N/A",
+                        first_name=s.first_name or "Unknown",
+                        last_name=s.last_name or "",
+                        course=s.course or "N/A",
+                        class_details=c_details
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to map student info for {s.id}: {e}")
+                    # Attempt partial fallback if validation failed
+                    try:
+                        student_info = StudentInfo(
+                            id=s.id,
+                            admission_number="N/A",
+                            first_name="Unknown",
+                            last_name="Student",
+                            class_details=c_details
+                        )
+                    except:
+                        pass
+            
+            try:
+                # Convert Enums to strings explicitly to avoid Pydantic validation errors
+                payment_dict = {
+                    "id": p.id,
+                    "tenant_id": p.tenant_id,
+                    "transaction_id": p.transaction_id,
+                    "receipt_number": p.receipt_number,
+                    "student_id": p.student_id,
+                    "fee_type": p.fee_type.value if hasattr(p.fee_type, 'value') else str(p.fee_type),
+                    "description": p.description,
+                    "academic_year": p.academic_year,
+                    "semester": p.semester,
+                    "total_amount": p.total_amount,
+                    "paid_amount": p.paid_amount,
+                    "discount_amount": p.discount_amount,
+                    "fine_amount": p.fine_amount,
+                    "payment_method": p.payment_method.value if p.payment_method and hasattr(p.payment_method, 'value') else (str(p.payment_method) if p.payment_method else None),
+                    "payment_reference": p.payment_reference,
+                    "payment_date": p.payment_date,
+                    "due_date": p.due_date,
+                    "status": p.status.value if hasattr(p.status, 'value') else str(p.status),
+                    "notes": p.notes,
+                    "created_at": p.created_at,
+                    "updated_at": p.updated_at,
+                    "student": student_info
+                }
+                
+                p_resp = FeePaymentResponse(**payment_dict)
+                items.append(p_resp)
+            except Exception as e:
+                logger.error(f"Error validating payment {p.id}: {e}")
+                continue
+
         return FeePaymentListResponse(
-            items=payments,
+            items=items,
             total=total,
             page=page,
             page_size=page_size,
@@ -173,7 +260,7 @@ async def list_fee_payments(
         )
     except Exception as e:
         logger.error(f"Error listing fees: {e}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching fees")
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching fees: {str(e)}")
 
 
 @router.post("", response_model=FeePaymentResponse, status_code=status.HTTP_201_CREATED)
@@ -247,9 +334,10 @@ async def get_fee_summary(
 ):
     """Get fee summary statistics using database aggregation."""
     # Use database aggregation for better performance
-    base_filter = FeePayment.tenant_id == current_user.tenant_id
-    
-    filters = [base_filter]
+    filters = [
+        FeePayment.tenant_id == current_user.tenant_id,
+        FeePayment.is_deleted == False,
+    ]
     if student_id:
         filters.append(FeePayment.student_id == student_id)
     if academic_year:
@@ -464,3 +552,157 @@ async def delete_fee_payment(
         logger.error(f"Error deleting fee payment: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while deleting")
+
+
+class BulkFeeCreateRequest(BaseModel):
+    class_id: UUID
+    fee_type: str
+    amount: float
+    description: Optional[str] = None
+    academic_year: Optional[str] = "2024-25"
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+@require_permission("fees", "create")
+async def create_bulk_fees(
+    request: Request,
+    bulk_data: BulkFeeCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate fee records for all students in a class."""
+    try:
+        # Get students in class
+        students_result = await db.execute(
+            select(Student).where(
+                Student.class_id == bulk_data.class_id,
+                Student.tenant_id == current_user.tenant_id,
+                Student.status == 'active'  # Only active students
+            )
+        )
+        students = students_result.scalars().all()
+        
+        if not students:
+            raise HTTPException(status_code=404, detail="No active students found in this class")
+            
+        created_count = 0
+        for student in students:
+            # Check if fee already exists for this type/year to avoid duplicates?
+            # For now, we allow multiples (e.g. monthly tuition), but maybe check description?
+            
+            payment = FeePayment(
+                student_id=student.id,
+                fee_type=bulk_data.fee_type,
+                description=bulk_data.description,
+                academic_year=bulk_data.academic_year,
+                total_amount=bulk_data.amount,
+                notes=bulk_data.notes,
+                tenant_id=current_user.tenant_id,
+                transaction_id=generate_transaction_id(), # This might be too fast, ensure uniqueness
+                status=PaymentStatus.PENDING,
+                paid_amount=0,
+                discount_amount=0,
+                fine_amount=0,
+                due_date=datetime.strptime(bulk_data.due_date, "%Y-%m-%d").date() if bulk_data.due_date else None
+            )
+            # Add small delay or salt? generate_transaction_id uses uuid4 so it should be fine.
+            # But the time part might overlap. adding a counter or ensuring uuid uniqueness.
+            # uuid4 is random, so collision is unlikely.
+            
+            db.add(payment)
+            created_count += 1
+            
+        await db.commit()
+        return {"message": f"Successfully generated fees for {created_count} students", "count": created_count}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating bulk fees: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate bulk fees: {str(e)}")
+
+@router.get("/{payment_id}/receipt")
+@require_permission("fees", "read")
+async def download_fee_receipt(
+    request: Request,
+    payment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download fee receipt as PDF."""
+    from fastapi.responses import StreamingResponse
+    from app.utils.pdf_utils import generate_fee_receipt_pdf
+    
+    try:
+        # Get payment with student
+        result = await db.execute(
+            select(FeePayment)
+            .where(
+                FeePayment.id == payment_id,
+                FeePayment.tenant_id == current_user.tenant_id
+            )
+            .options(selectinload(FeePayment.student))
+        )
+        payment = result.scalar_one_or_none()
+        
+        if not payment:
+            raise HTTPException(
+                status_code=404,
+                detail="Fee payment not found"
+            )
+        
+        # Get tenant info from database
+        tenant_result = await db.execute(
+            select(Tenant).where(Tenant.id == current_user.tenant_id)
+        )
+        tenant = tenant_result.scalar_one_or_none()
+        tenant_info = {
+            "name": tenant.name if tenant else "Educational Institution",
+            "address": getattr(tenant, "address", "") if tenant else ""
+        }
+        
+        # Prepare payment data
+        payment_data = {
+            "transaction_id": payment.transaction_id,
+            "receipt_number": payment.receipt_number,
+            "fee_type": payment.fee_type.value if hasattr(payment.fee_type, 'value') else str(payment.fee_type),
+            "description": payment.description,
+            "total_amount": payment.total_amount,
+            "paid_amount": payment.paid_amount,
+            "discount_amount": payment.discount_amount,
+            "fine_amount": payment.fine_amount,
+            "payment_method": payment.payment_method.value if payment.payment_method and hasattr(payment.payment_method, 'value') else str(payment.payment_method or "Cash"),
+            "payment_reference": payment.payment_reference,
+            "payment_date": payment.payment_date.strftime("%Y-%m-%d %H:%M") if payment.payment_date else datetime.now().strftime("%Y-%m-%d"),
+        }
+        
+        # Prepare student data
+        student_data = {}
+        if payment.student:
+            student_data = {
+                "first_name": payment.student.first_name,
+                "last_name": payment.student.last_name,
+                "admission_number": payment.student.admission_number,
+                "course": payment.student.course,
+            }
+        
+        # Generate PDF
+        pdf_buffer = generate_fee_receipt_pdf(payment_data, student_data, tenant_info)
+        
+        filename = f"receipt_{payment.transaction_id or payment_id}.pdf"
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating receipt: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate receipt")
+

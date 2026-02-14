@@ -43,7 +43,7 @@ class TimeSlotBase(BaseModel):
     end_time: time
     slot_type: TimeSlotTypeEnum = TimeSlotTypeEnum.CLASS
     order: int = 0
-    applicable_days: List[int] = [1, 2, 3, 4, 5]
+    applicable_days: Any = [1, 2, 3, 4, 5]
     academic_year: Optional[str] = None
     term: Optional[str] = None
     is_active: bool = True
@@ -62,7 +62,7 @@ class TimeSlotUpdate(BaseModel):
     end_time: Optional[time] = None
     slot_type: Optional[TimeSlotTypeEnum] = None
     order: Optional[int] = None
-    applicable_days: Optional[List[int]] = None
+    applicable_days: Optional[Any] = None
     is_active: Optional[bool] = None
 
 

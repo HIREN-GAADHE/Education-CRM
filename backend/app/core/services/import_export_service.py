@@ -48,56 +48,127 @@ class ImportExportService:
     def get_student_import_template(self) -> bytes:
         """
         Generate a CSV template for student import.
-        Includes class and fee assignment fields.
+        Includes all student fields, class linking, and fee assignment.
         """
         headers = [
+            # Required fields
             "first_name",
             "last_name",
-            "email",
-            "phone",
+            "admission_number",
+            
+            # Personal details
+            "middle_name",
             "date_of_birth",
             "gender",
-            "admission_number",
+            "blood_group",
+            "nationality",
+            "religion",
+            "caste",
+            "category",
+            
+            # Contact
+            "email",
+            "phone",
+            "alternate_phone",
+            
+            # Address
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "pincode",
+            "country",
+            
+            # Parent/Guardian details
+            "father_name",
+            "father_phone",
+            "father_occupation",
+            "mother_name",
+            "mother_phone",
+            "mother_occupation",
+            "guardian_name",
+            "guardian_phone",
+            "guardian_relation",
+            "parent_email",
+            
+            # Academic
             "roll_number",
             "class_name",
             "section",
-            "guardian_name",
-            "guardian_phone",
-            "guardian_email",
-            "address_line1",
-            "city",
-            "state",
-            "postal_code",
+            "course",
+            "department",
+            "batch",
+            "semester",
+            "year",
+            "admission_date",
+            "admission_type",
+            
             # Fee-related fields (optional)
-            "fee_type",        # tuition, admission, examination, library, sports, transport, hostel, other
-            "fee_amount",      # Total fee amount to assign
-            "academic_year",   # e.g., 2024-25
-            "fee_due_date",    # YYYY-MM-DD format
+            "fee_type",
+            "fee_amount",
+            "academic_year",
+            "fee_due_date",
         ]
         
         # Sample data row
         sample = [
+            # Required
             "John",
             "Doe",
-            "john.doe@example.com",
-            "+919876543210",
+            "ADM-2024-001",
+            
+            # Personal
+            "William",
             "2010-05-15",
             "male",
-            "ADM-2024-001",
-            "101",
-            "10",              # Class name (will auto-link to SchoolClass)
-            "A",              # Section (will auto-link to SchoolClass)
-            "Jane Doe",
-            "+919876543211",
-            "jane.doe@example.com",
+            "O+",
+            "Indian",
+            "",
+            "",
+            "General",
+            
+            # Contact
+            "john.doe@example.com",
+            "+919876543210",
+            "",
+            
+            # Address
             "123 Main Street",
+            "Apt 4B",
             "Mumbai",
             "Maharashtra",
             "400001",
-            "tuition",        # Fee type
-            "50000",          # Fee amount
-            "2024-25",        # Academic year
-            "2024-06-30",     # Due date
+            "India",
+            
+            # Parent/Guardian
+            "Robert Doe",
+            "+919876543211",
+            "Engineer",
+            "Mary Doe",
+            "+919876543212",
+            "Doctor",
+            "James Doe",
+            "+919876543213",
+            "Uncle",
+            "parent@example.com",
+            
+            # Academic
+            "101",
+            "10",
+            "A",
+            "Science",
+            "Physics",
+            "2024-2028",
+            "1",
+            "1",
+            "2024-04-01",
+            "Regular",
+            
+            # Fee
+            "tuition",
+            "50000",
+            "2024-25",
+            "2024-06-30",
         ]
         
         output = StringIO()
@@ -116,6 +187,7 @@ class ImportExportService:
     ) -> Dict[str, Any]:
         """
         Import students from CSV file with class linking and fee assignment.
+        Uses transaction rollback on failure to ensure data consistency.
         
         Returns:
             Dict with import results including success count, error count, and details
@@ -138,9 +210,7 @@ class ImportExportService:
                     SchoolClass.is_deleted == False
                 )
             )
-            classes = class_result.scalars().all()
-            # Create lookup map: "class_name|section" -> class_id
-
+            classes = list(class_result.scalars().all())
             
             # Decode and parse CSV
             content = file_content.decode('utf-8')
@@ -157,10 +227,14 @@ class ImportExportService:
 
             # Use DictReader with normalized fieldnames
             io_obj.seek(0)
-            next(io_obj) # Skip original header
+            next(io_obj)  # Skip original header
             reader = csv.DictReader(io_obj, fieldnames=normalized_headers)
             rows = list(reader)
             results["total_rows"] = len(rows)
+            
+            # Track if we have critical errors that should trigger rollback
+            critical_error_count = 0
+            max_critical_errors = 5  # Rollback if more than 5 critical errors
             
             for row_num, row in enumerate(rows, start=2):  # Start at 2 (row 1 is headers)
                 try:
@@ -170,21 +244,29 @@ class ImportExportService:
                             "row": row_num,
                             "error": "first_name is required"
                         })
+                        critical_error_count += 1
                         continue
                     
-                    # Look up class_id
-                    class_id, class_error = self._resolve_class_id(classes, row)
-                    if class_error:
+                    if not row.get("last_name"):
                         results["errors"].append({
                             "row": row_num,
-                            "error": class_error
+                            "error": "last_name is required"
                         })
-                        # If class not found, we continue but don't link?
-                        # Or do we SKIP import? 
-                        # The user wants valid data. If they specified a class that doesn't exist, it's an error.
+                        critical_error_count += 1
                         continue
                     
-                    # Check for duplicates by admission_number or email
+                    # Look up class_id (optional - don't fail if not found)
+                    class_id = None
+                    if row.get("class_name"):
+                        class_id, class_error = self._resolve_class_id(classes, row)
+                        if class_error:
+                            results["errors"].append({
+                                "row": row_num,
+                                "error": class_error + " (student will be created without class link)"
+                            })
+                            # Don't skip - just create without class link
+                    
+                    # Check for duplicates by admission_number or email (excluding deleted)
                     existing = None
                     if row.get("admission_number"):
                         existing_result = await self.db.execute(
@@ -200,7 +282,8 @@ class ImportExportService:
                             select(Student).where(
                                 Student.tenant_id == tenant_id,
                                 Student.email == row["email"],
-                            ).order_by(Student.is_deleted.asc(), Student.updated_at.desc())
+                                Student.is_deleted == False,  # Only check non-deleted
+                            )
                         )
                         existing = existing_result.scalars().first()
                     
@@ -215,7 +298,7 @@ class ImportExportService:
                             if fee_created:
                                 results["fees_created"] += 1
                             results["imported"] += 1
-                            results["imported_ids"].append(existing.id)
+                            results["imported_ids"].append(str(existing.id))
                             continue
                             
                         # Handle active existing students
@@ -227,7 +310,7 @@ class ImportExportService:
                             if fee_created:
                                 results["fees_created"] += 1
                             results["updated"] += 1
-                            results["imported_ids"].append(existing.id)
+                            results["imported_ids"].append(str(existing.id))
                         elif skip_duplicates:
                             results["skipped"] += 1
                         else:
@@ -236,6 +319,10 @@ class ImportExportService:
                                 "error": f"Duplicate student: {row.get('admission_number') or row.get('email')}"
                             })
                         continue
+                    
+                    # Generate admission number if not provided
+                    if not row.get("admission_number"):
+                        row["admission_number"] = f"ADM-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
                     
                     # Create new student with class_id
                     student = self._create_student_from_row(tenant_id, row, class_id)
@@ -248,19 +335,40 @@ class ImportExportService:
                         results["fees_created"] += 1
                     
                     results["imported"] += 1
-                    results["imported_ids"].append(student.id)
+                    results["imported_ids"].append(str(student.id))
                     
                 except Exception as e:
                     results["errors"].append({
                         "row": row_num,
                         "error": str(e)
                     })
+                    critical_error_count += 1
+            
+            # Check if too many errors - rollback
+            if critical_error_count > max_critical_errors and results["imported"] == 0:
+                await self.db.rollback()
+                results["errors"].insert(0, {
+                    "row": 0,
+                    "error": f"Import aborted: Too many errors ({critical_error_count}). No data was saved."
+                })
+                results["imported"] = 0
+                results["updated"] = 0
+                results["fees_created"] = 0
+                results["imported_ids"] = []
+                return results
             
             await self.db.commit()
             
         except Exception as e:
+            # Rollback on any unhandled exception
+            await self.db.rollback()
             logger.error(f"Failed to import students: {str(e)}")
-            results["errors"].append({"row": 0, "error": f"File parsing error: {str(e)}"})
+            results["errors"].append({"row": 0, "error": f"Import failed and rolled back: {str(e)}"})
+            # Reset counts since we rolled back
+            results["imported"] = 0
+            results["updated"] = 0
+            results["fees_created"] = 0
+            results["imported_ids"] = []
         
         return results
     
@@ -269,6 +377,7 @@ class ImportExportService:
         Resolve class_id from row data.
         Handles checking 'class_name'/'class' and 'section'.
         If section is missing, tries to find unique class with that name.
+        Also handles composite names like "10-A" or "10 A".
         """
         # Get normalized values
         class_name = str(row.get("class_name", "")).strip() or str(row.get("class", "")).strip()
@@ -280,94 +389,288 @@ class ImportExportService:
             
         section = str(row.get("section", "")).strip()
         
-        # Case 1: Name and Section provided
-        if section:
+        # Helper to match class
+        def find_match(name: str, sect: str) -> Optional[Any]:
             for cls in classes:
-                if cls.name.strip().lower() == class_name.lower() and cls.section.strip().lower() == section.lower():
-                    return cls.id, None
+                if cls.name.strip().lower() == name.lower() and cls.section.strip().lower() == sect.lower():
+                    return cls.id
+            return None
+
+        # Case 1: Name and Section provided explicitly
+        if section:
+            class_id = find_match(class_name, section)
+            if class_id:
+                return class_id, None
             
             # List available classes for debugging
             available = [f"'{c.name}'-'{c.section}'" for c in classes]
             return None, f"Class '{class_name}' with Section '{section}' not found. Available: {available[:5]}..."
             
-        # Case 2: Only Name provided -> Attempt automatic resolution
+        # Case 2: Only Name provided
+        # 2a. Try exact match on Name (assuming unique name or relying on auto-resolution)
         candidates = [c for c in classes if c.name.strip().lower() == class_name.lower()]
         if len(candidates) == 1:
             return candidates[0].id, None
         elif len(candidates) > 1:
             sections = ", ".join([c.section for c in candidates])
             return None, f"Ambiguous class '{class_name}'. Multiple sections found ({sections}). Please specify 'Section' column."
-        else:
-            return None, f"Class '{class_name}' not found."
+        
+        # 2b. Try parsing "Name-Section" or "Name Section"
+        # Common delimiters: '-', ' '
+        import re
+        # Try "10-A"
+        if '-' in class_name:
+            parts = class_name.split('-', 1)
+            name_part = parts[0].strip()
+            sect_part = parts[1].strip()
+            cid = find_match(name_part, sect_part)
+            if cid:
+                return cid, None
+        
+        # Try "10 A" (last token is section? or specific pattern?)
+        # Let's try splitting by space if it looks like "Number Letter" or "Word Letter"
+        parts = class_name.split()
+        if len(parts) >= 2:
+            # Assume last part is section
+            sect_part = parts[-1]
+            name_part = " ".join(parts[:-1])
+            cid = find_match(name_part, sect_part)
+            if cid:
+                return cid, None
+                
+        return None, f"Class '{class_name}' not found. Try specifying 'Section' explicitly."
 
     def _create_student_from_row(self, tenant_id: str, row: Dict[str, str], class_id: Optional[Any] = None) -> Student:
-        """Create a Student object from a CSV row with optional class linking."""
-        # Parse date of birth
-        dob = None
-        if row.get("date_of_birth"):
-            try:
-                dob = datetime.strptime(row["date_of_birth"], "%Y-%m-%d")
-            except ValueError:
+        """Create a Student object from a CSV row with all available fields."""
+        
+        def parse_date(date_str: str) -> Optional[date]:
+            """Parse date from various formats."""
+            if not date_str:
+                return None
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
                 try:
-                    dob = datetime.strptime(row["date_of_birth"], "%d/%m/%Y")
+                    return datetime.strptime(date_str.strip(), fmt).date()
                 except ValueError:
-                    pass
+                    continue
+            return None
+        
+        def get_str(key: str) -> Optional[str]:
+            """Get stripped string value or None."""
+            val = row.get(key, "")
+            return val.strip() if val and val.strip() else None
+        
+        def get_int(key: str) -> Optional[int]:
+            """Get integer value or None."""
+            val = get_str(key)
+            if val:
+                try:
+                    return int(float(val))
+                except ValueError:
+                    return None
+            return None
         
         # Map gender
         gender = None
         if row.get("gender"):
             gender_map = {
-                "male": "male",
-                "m": "male",
-                "female": "female",
-                "f": "female",
-                "other": "other",
-                "o": "other",
+                "male": "male", "m": "male",
+                "female": "female", "f": "female",
+                "other": "other", "o": "other",
             }
-            gender = gender_map.get(row["gender"].lower())
+            gender = gender_map.get(row["gender"].lower().strip())
         
         return Student(
             tenant_id=tenant_id,
+            # Required fields
             first_name=row["first_name"].strip(),
-            last_name=row.get("last_name", "").strip() or None,
-            email=row.get("email", "").strip() or None,
-            phone=row.get("phone", "").strip() or None,
-            date_of_birth=dob,
+            last_name=row.get("last_name", "").strip() or "",
+            admission_number=get_str("admission_number"),
+            
+            # Personal details
+            middle_name=get_str("middle_name"),
+            date_of_birth=parse_date(row.get("date_of_birth", "")),
             gender=gender,
-            admission_number=row.get("admission_number", "").strip() or None,
-            roll_number=row.get("roll_number", "").strip() or None,
-            class_name=row.get("class_name", "").strip() or None,
-            section=row.get("section", "").strip() or None,
-            class_id=class_id,  # Link to SchoolClass
-            guardian_name=row.get("guardian_name", "").strip() or None,
-            guardian_phone=row.get("guardian_phone", "").strip() or None,
-            guardian_email=row.get("guardian_email", "").strip() or None,
-            address=row.get("address_line1", "").strip() or None,
-            city=row.get("city", "").strip() or None,
-            state=row.get("state", "").strip() or None,
-            postal_code=row.get("postal_code", "").strip() or None,
+            blood_group=get_str("blood_group"),
+            nationality=get_str("nationality") or "Indian",
+            religion=get_str("religion"),
+            caste=get_str("caste"),
+            category=get_str("category"),
+            
+            # Contact
+            email=get_str("email"),
+            phone=get_str("phone"),
+            alternate_phone=get_str("alternate_phone"),
+            
+            # Address
+            address_line1=get_str("address_line1"),
+            address_line2=get_str("address_line2"),
+            city=get_str("city"),
+            state=get_str("state"),
+            pincode=get_str("pincode") or get_str("postal_code"),  # Handle both
+            country=get_str("country") or "India",
+            
+            # Parent/Guardian details
+            father_name=get_str("father_name"),
+            father_phone=get_str("father_phone"),
+            father_occupation=get_str("father_occupation"),
+            mother_name=get_str("mother_name"),
+            mother_phone=get_str("mother_phone"),
+            mother_occupation=get_str("mother_occupation"),
+            guardian_name=get_str("guardian_name"),
+            guardian_phone=get_str("guardian_phone"),
+            guardian_relation=get_str("guardian_relation"),
+            parent_email=get_str("parent_email") or get_str("guardian_email"),
+            
+            # Academic
+            roll_number=get_str("roll_number"),
+            class_id=class_id,
+            course=get_str("course"),
+            department=get_str("department"),
+            batch=get_str("batch"),
+            section=get_str("section"),
+            semester=get_int("semester"),
+            year=get_int("year"),
+            admission_date=parse_date(row.get("admission_date", "")),
+            admission_type=get_str("admission_type"),
+            
             status=StudentStatus.ACTIVE,
         )
     
     async def _update_student_from_row(self, student: Student, row: Dict[str, str], class_id: Optional[Any] = None):
-        """Update a Student object from a CSV row."""
-        # Only update non-empty fields
-        if row.get("first_name"):
-            student.first_name = row["first_name"].strip()
-        if row.get("last_name"):
-            student.last_name = row["last_name"].strip()
-        if row.get("email"):
-            student.email = row["email"].strip()
-        if row.get("phone"):
-            student.phone = row["phone"].strip()
-        if row.get("class_name"):
-            student.class_name = row["class_name"].strip()
-        if row.get("section"):
-            student.section = row["section"].strip()
+        """Update a Student object from a CSV row with all available fields."""
+        
+        def parse_date(date_str: str) -> Optional[date]:
+            """Parse date from various formats."""
+            if not date_str:
+                return None
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(date_str.strip(), fmt).date()
+                except ValueError:
+                    continue
+            return None
+        
+        def get_str(key: str) -> Optional[str]:
+            """Get stripped string value or None."""
+            val = row.get(key, "")
+            return val.strip() if val and val.strip() else None
+        
+        def get_int(key: str) -> Optional[int]:
+            """Get integer value or None."""
+            val = get_str(key)
+            if val:
+                try:
+                    return int(float(val))
+                except ValueError:
+                    return None
+            return None
+        
+        # Map gender
+        gender = None
+        if row.get("gender"):
+            gender_map = {
+                "male": "male", "m": "male",
+                "female": "female", "f": "female",
+                "other": "other", "o": "other",
+            }
+            gender = gender_map.get(row["gender"].lower().strip())
+        
+        # Update all non-empty fields
+        # Required
+        if get_str("first_name"):
+            student.first_name = get_str("first_name")
+        if get_str("last_name"):
+            student.last_name = get_str("last_name")
+        if get_str("admission_number"):
+            student.admission_number = get_str("admission_number")
+        
+        # Personal
+        if get_str("middle_name"):
+            student.middle_name = get_str("middle_name")
+        if row.get("date_of_birth"):
+            dob = parse_date(row["date_of_birth"])
+            if dob:
+                student.date_of_birth = dob
+        if gender:
+            student.gender = gender
+        if get_str("blood_group"):
+            student.blood_group = get_str("blood_group")
+        if get_str("nationality"):
+            student.nationality = get_str("nationality")
+        if get_str("religion"):
+            student.religion = get_str("religion")
+        if get_str("caste"):
+            student.caste = get_str("caste")
+        if get_str("category"):
+            student.category = get_str("category")
+        
+        # Contact
+        if get_str("email"):
+            student.email = get_str("email")
+        if get_str("phone"):
+            student.phone = get_str("phone")
+        if get_str("alternate_phone"):
+            student.alternate_phone = get_str("alternate_phone")
+        
+        # Address
+        if get_str("address_line1"):
+            student.address_line1 = get_str("address_line1")
+        if get_str("address_line2"):
+            student.address_line2 = get_str("address_line2")
+        if get_str("city"):
+            student.city = get_str("city")
+        if get_str("state"):
+            student.state = get_str("state")
+        if get_str("pincode") or get_str("postal_code"):
+            student.pincode = get_str("pincode") or get_str("postal_code")
+        if get_str("country"):
+            student.country = get_str("country")
+        
+        # Parent/Guardian
+        if get_str("father_name"):
+            student.father_name = get_str("father_name")
+        if get_str("father_phone"):
+            student.father_phone = get_str("father_phone")
+        if get_str("father_occupation"):
+            student.father_occupation = get_str("father_occupation")
+        if get_str("mother_name"):
+            student.mother_name = get_str("mother_name")
+        if get_str("mother_phone"):
+            student.mother_phone = get_str("mother_phone")
+        if get_str("mother_occupation"):
+            student.mother_occupation = get_str("mother_occupation")
+        if get_str("guardian_name"):
+            student.guardian_name = get_str("guardian_name")
+        if get_str("guardian_phone"):
+            student.guardian_phone = get_str("guardian_phone")
+        if get_str("guardian_relation"):
+            student.guardian_relation = get_str("guardian_relation")
+        if get_str("parent_email") or get_str("guardian_email"):
+            student.parent_email = get_str("parent_email") or get_str("guardian_email")
+        
+        # Academic
+        if get_str("roll_number"):
+            student.roll_number = get_str("roll_number")
         if class_id:
             student.class_id = class_id
-        if row.get("guardian_name"):
-            student.guardian_name = row["guardian_name"].strip()
+        if get_str("section"):
+            student.section = get_str("section")
+        if get_str("course"):
+            student.course = get_str("course")
+        if get_str("department"):
+            student.department = get_str("department")
+        if get_str("batch"):
+            student.batch = get_str("batch")
+        if get_int("semester"):
+            student.semester = get_int("semester")
+        if get_int("year"):
+            student.year = get_int("year")
+        if row.get("admission_date"):
+            adm_date = parse_date(row["admission_date"])
+            if adm_date:
+                student.admission_date = adm_date
+        if get_str("admission_type"):
+            student.admission_type = get_str("admission_type")
     
     async def _create_fee_for_student(
         self, 
@@ -426,8 +729,43 @@ class ImportExportService:
                 except ValueError:
                     due_date = date.today()
             
-            # Get academic year
-            academic_year = row.get("academic_year", "").strip() or None
+            # Get academic year (default to current-upcoming if missing, e.g. 2025-26)
+            academic_year = row.get("academic_year", "").strip()
+            if not academic_year:
+                 today = date.today()
+                 # If before April, we are in previous-current year sequence (e.g. Feb 2026 is 2025-26)
+                 # If April or later, we are in current-next year (e.g. April 2026 is 2026-27)
+                 start_year = today.year if today.month >= 4 else today.year - 1
+                 end_year_short = str(start_year + 1)[-2:]
+                 academic_year = f"{start_year}-{end_year_short}"
+            
+            # Check for existing fee to avoid duplicates
+            existing_fee_result = await self.db.execute(
+                select(FeePayment).where(
+                    FeePayment.student_id == student.id,
+                    FeePayment.fee_type == fee_type,
+                    FeePayment.academic_year == academic_year,
+                    FeePayment.tenant_id == tenant_id,
+                )
+            )
+            existing_fee = existing_fee_result.scalars().first()
+            
+            if existing_fee:
+                # If already paid, do not update amount/date and do not duplicate
+                if existing_fee.status == PaymentStatus.PAID:
+                    return False
+                    
+                # Update existing pending/partial fee
+                existing_fee.total_amount = fee_amount
+                # Only update due date if provided in file
+                if due_date:
+                    existing_fee.due_date = due_date
+                
+                # Only update description if it looks generic
+                if "Imported fee" in existing_fee.description:
+                    existing_fee.description = f"Imported fee - {fee_type.value}"
+                    
+                return False # Existing fee updated, not created
             
             # Generate transaction ID
             transaction_id = f"IMP-{uuid.uuid4().hex[:8].upper()}"
@@ -464,8 +802,12 @@ class ImportExportService:
     ) -> bytes:
         """
         Export students to CSV format.
+        Excludes soft-deleted students.
         """
-        query = select(Student).where(Student.tenant_id == tenant_id)
+        query = select(Student).where(
+            Student.tenant_id == tenant_id,
+            Student.is_deleted == False,  # Exclude deleted students
+        )
         
         if status:
             query = query.where(Student.status == status)
@@ -479,27 +821,50 @@ class ImportExportService:
         output = StringIO()
         writer = csv.writer(output)
         
-        # Headers
+        # Headers matching the import template
         headers = [
             "id",
+            "admission_number",
             "first_name",
+            "middle_name",
             "last_name",
-            "email",
-            "phone",
             "date_of_birth",
             "gender",
-            "admission_number",
-            "roll_number",
-            "class_name",
-            "section",
-            "status",
-            "guardian_name",
-            "guardian_phone",
-            "guardian_email",
-            "address",
+            "blood_group",
+            "nationality",
+            "religion",
+            "caste",
+            "category",
+            "email",
+            "phone",
+            "alternate_phone",
+            "address_line1",
+            "address_line2",
             "city",
             "state",
-            "postal_code",
+            "pincode",
+            "country",
+            "father_name",
+            "father_phone",
+            "father_occupation",
+            "mother_name",
+            "mother_phone",
+            "mother_occupation",
+            "guardian_name",
+            "guardian_phone",
+            "guardian_relation",
+            "parent_email",
+            "roll_number",
+            "class_id",
+            "course",
+            "department",
+            "batch",
+            "section",
+            "semester",
+            "year",
+            "admission_date",
+            "admission_type",
+            "status",
             "created_at",
         ]
         writer.writerow(headers)
@@ -508,24 +873,47 @@ class ImportExportService:
         for student in students:
             row = [
                 str(student.id),
-                student.first_name,
+                student.admission_number or "",
+                student.first_name or "",
+                student.middle_name or "",
                 student.last_name or "",
-                student.email or "",
-                student.phone or "",
                 student.date_of_birth.strftime("%Y-%m-%d") if student.date_of_birth else "",
                 student.gender.value if student.gender else "",
-                student.admission_number or "",
-                student.roll_number or "",
-                student.class_name or "",
-                student.section or "",
-                student.status.value if student.status else "",
-                student.guardian_name or "",
-                student.guardian_phone or "",
-                student.guardian_email or "",
-                student.address or "",
+                student.blood_group or "",
+                student.nationality or "",
+                student.religion or "",
+                student.caste or "",
+                student.category or "",
+                student.email or "",
+                student.phone or "",
+                student.alternate_phone or "",
+                student.address_line1 or "",
+                student.address_line2 or "",
                 student.city or "",
                 student.state or "",
-                student.postal_code or "",
+                student.pincode or "",
+                student.country or "",
+                student.father_name or "",
+                student.father_phone or "",
+                student.father_occupation or "",
+                student.mother_name or "",
+                student.mother_phone or "",
+                student.mother_occupation or "",
+                student.guardian_name or "",
+                student.guardian_phone or "",
+                student.guardian_relation or "",
+                student.parent_email or "",
+                student.roll_number or "",
+                str(student.class_id) if student.class_id else "",
+                student.course or "",
+                student.department or "",
+                student.batch or "",
+                student.section or "",
+                str(student.semester) if student.semester else "",
+                str(student.year) if student.year else "",
+                student.admission_date.strftime("%Y-%m-%d") if student.admission_date else "",
+                student.admission_type or "",
+                student.status.value if student.status else "",
                 student.created_at.strftime("%Y-%m-%d %H:%M:%S") if student.created_at else "",
             ]
             writer.writerow(row)
@@ -539,13 +927,17 @@ class ImportExportService:
     ) -> bytes:
         """
         Export students to Excel format.
+        Excludes soft-deleted students.
         """
         if not self.has_pandas or not self.has_openpyxl:
             raise RuntimeError("pandas and openpyxl are required for Excel export")
         
         import pandas as pd
         
-        query = select(Student).where(Student.tenant_id == tenant_id)
+        query = select(Student).where(
+            Student.tenant_id == tenant_id,
+            Student.is_deleted == False,  # Exclude deleted students
+        )
         
         if status:
             query = query.where(Student.status == status)

@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 
 from app.models.timetable import (
@@ -113,15 +114,46 @@ class TimetableService:
         exclude_entry_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Check for scheduling conflicts.
+        Check for scheduling conflicts using time-based overlap.
         
         Returns list of conflicts with details.
         """
         conflicts = []
         
+        # 1. Get the current time slot to know its timing
+        stmt = select(TimeSlot).where(TimeSlot.id == time_slot_id)
+        result = await self.db.execute(stmt)
+        current_slot = result.scalar_one_or_none()
+        
+        if not current_slot:
+            # Should not happen if foreign key valid, but handle gracefully
+            return []
+
+        # 2. Find ALL overlapping time slots (including the current one)
+        # Overlap logic: (SlotA.Start < SlotB.End) AND (SlotA.End > SlotB.Start)
+        overlap_query = select(TimeSlot.id).where(
+            and_(
+                TimeSlot.tenant_id == tenant_id,
+                TimeSlot.is_active == True,
+                TimeSlot.start_time < current_slot.end_time,
+                TimeSlot.end_time > current_slot.start_time
+            )
+        )
+        if academic_year:
+            overlap_query = overlap_query.where(
+                or_(TimeSlot.academic_year == academic_year, TimeSlot.academic_year.is_(None))
+            )
+
+        overlap_result = await self.db.execute(overlap_query)
+        overlapping_slot_ids = list(overlap_result.scalars().all())
+        
+        if not overlapping_slot_ids:
+            overlapping_slot_ids = [time_slot_id] # Should at least include itself if active
+
+        # 3. Base Conditions for Entry Conflict
         base_conditions = [
             TimetableEntry.tenant_id == tenant_id,
-            TimetableEntry.time_slot_id == time_slot_id,
+            TimetableEntry.time_slot_id.in_(overlapping_slot_ids), # Check ANY overlapping slot
             TimetableEntry.day_of_week == day_of_week,
             TimetableEntry.status == TimetableStatus.ACTIVE,
         ]
@@ -132,9 +164,9 @@ class TimetableService:
         if exclude_entry_id:
             base_conditions.append(TimetableEntry.id != exclude_entry_id)
         
-        # Check teacher conflict
+        # 4. Check teacher conflict
         if teacher_id:
-            query = select(TimetableEntry).where(
+            query = select(TimetableEntry).options(selectinload(TimetableEntry.time_slot)).where(
                 and_(*base_conditions, TimetableEntry.teacher_id == teacher_id)
             )
             result = await self.db.execute(query)
@@ -144,14 +176,16 @@ class TimetableService:
                 conflicts.append({
                     "type": "teacher",
                     "entry_id": str(existing.id),
-                    "message": f"Teacher is already assigned to another class at this time",
+                    "message": f"Teacher is already assigned to {existing.class_name}-{existing.section} in {existing.time_slot.name}",
                     "class_name": existing.class_name,
                     "section": existing.section,
+                    "blocking_slot": existing.time_slot.name,
+                    "blocking_subject": existing.subject_name,
                 })
         
-        # Check room conflict
+        # 5. Check room conflict
         if room_id:
-            query = select(TimetableEntry).where(
+            query = select(TimetableEntry).options(selectinload(TimetableEntry.time_slot)).where(
                 and_(*base_conditions, TimetableEntry.room_id == room_id)
             )
             result = await self.db.execute(query)
@@ -161,19 +195,20 @@ class TimetableService:
                 conflicts.append({
                     "type": "room",
                     "entry_id": str(existing.id),
-                    "message": f"Room is already booked at this time",
+                    "message": f"Room is already booked for {existing.class_name} in {existing.time_slot.name}",
                     "class_name": existing.class_name,
                     "section": existing.section,
+                    "blocking_slot": existing.time_slot.name,
                 })
         
-        # Check class/section conflict
+        # 6. Check class/section conflict
         if class_name:
             class_conditions = base_conditions.copy()
             class_conditions.append(TimetableEntry.class_name == class_name)
             if section:
                 class_conditions.append(TimetableEntry.section == section)
             
-            query = select(TimetableEntry).where(and_(*class_conditions))
+            query = select(TimetableEntry).options(selectinload(TimetableEntry.time_slot)).where(and_(*class_conditions))
             result = await self.db.execute(query)
             existing = result.scalar_one_or_none()
             
@@ -181,8 +216,9 @@ class TimetableService:
                 conflicts.append({
                     "type": "class",
                     "entry_id": str(existing.id),
-                    "message": f"Class already has a subject assigned at this time",
+                    "message": f"Class has {existing.subject_name} assigned in {existing.time_slot.name}",
                     "subject_name": existing.subject_name,
+                    "blocking_slot": existing.time_slot.name,
                 })
         
         return conflicts

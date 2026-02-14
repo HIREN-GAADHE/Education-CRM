@@ -1,10 +1,10 @@
 """
 Student API Router - CRUD operations for students
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, UploadFile, File, Body
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, Integer, delete
 from typing import Optional, List
 from uuid import UUID
 import math
@@ -13,7 +13,10 @@ import io
 
 from app.config.database import get_db
 from app.models import Student, StudentStatus
+from app.models.fee import FeePayment
 from app.models.user import User
+from app.models.tenant import Tenant
+from app.models.role import Role, UserRole
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     StudentImportResult, StudentImportError
@@ -35,7 +38,7 @@ router = APIRouter(prefix="/students", tags=["Students"])
 async def list_students(
     request: Request,
     page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=300),
     search: Optional[str] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     course: Optional[str] = None,
@@ -367,6 +370,300 @@ async def get_student(
         raise HTTPException(status_code=500, detail="An error occurred")
 
 
+@router.get("/{student_id}/profile")
+@require_permission("students", "read")
+async def get_student_profile(
+    request: Request,
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get comprehensive student profile with all related data."""
+    from datetime import datetime, date
+    from app.models.attendance import Attendance, AttendanceStatus, AttendanceType
+    from app.models.examination import ExamResult, Examination, ExamStatus
+    from app.models.fee import FeePayment, PaymentStatus
+    from app.models.academic import SchoolClass
+    
+    try:
+        # Get student with tenant check
+        result = await db.execute(
+            select(Student).where(
+                Student.id == student_id,
+                Student.tenant_id == current_user.tenant_id,
+                Student.is_deleted == False
+            )
+        )
+        student = result.scalar_one_or_none()
+        
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Student not found"
+            )
+        
+        # Get class info
+        class_info = None
+        if student.class_id:
+            class_result = await db.execute(
+                select(SchoolClass).where(SchoolClass.id == student.class_id)
+            )
+            school_class = class_result.scalar_one_or_none()
+            if school_class:
+                class_info = {
+                    "id": str(school_class.id),
+                    "name": school_class.name,
+                    "section": school_class.section
+                }
+        
+        # Calculate enrollment journey
+        days_enrolled = 0
+        months_enrolled = 0
+        years_enrolled = 0
+        if student.admission_date:
+            days_enrolled = (date.today() - student.admission_date).days
+            months_enrolled = days_enrolled // 30
+            years_enrolled = days_enrolled // 365
+        
+        # Calculate expected graduation (assuming 4-year program from admission)
+        expected_graduation = None
+        if student.admission_date:
+            from datetime import timedelta
+            expected_graduation = (student.admission_date + timedelta(days=4*365)).strftime("%Y")
+        
+        # Academic progression milestones
+        milestones = []
+        if student.admission_date:
+            milestones.append({
+                "title": "Admission",
+                "date": student.admission_date.isoformat(),
+                "type": "admission",
+                "icon": "school"
+            })
+        if student.created_at:
+            milestones.append({
+                "title": "Profile Created",
+                "date": student.created_at.strftime("%Y-%m-%d"),
+                "type": "registration",
+                "icon": "person_add"
+            })
+        
+        # Add current term/semester milestone
+        current_semester = None
+        if student.admission_date:
+            semesters_passed = months_enrolled // 6
+            current_semester = min(semesters_passed + 1, 8)  # Max 8 semesters
+            if current_semester > 0:
+                milestones.append({
+                    "title": f"Currently in Semester {current_semester}",
+                    "date": date.today().isoformat(),
+                    "type": "current",
+                    "icon": "timeline"
+                })
+        
+        enrollment_journey = {
+            "admission_date": student.admission_date.isoformat() if student.admission_date else None,
+            "admission_type": student.admission_type,
+            "current_status": student.status.value if student.status else "active",
+            "days_enrolled": max(0, days_enrolled),
+            "months_enrolled": max(0, months_enrolled),
+            "years_enrolled": max(0, years_enrolled),
+            "batch": student.batch,
+            "expected_graduation": expected_graduation,
+            "current_semester": current_semester,
+            "academic_year": f"{date.today().year}-{date.today().year + 1}",
+            "course": student.course,
+            "department": student.department,
+            "class_name": class_info["name"] if class_info else None,
+            "section": class_info["section"] if class_info else None,
+            "roll_number": student.roll_number,
+            "milestones": milestones,
+        }
+        
+        # Get attendance summary
+        attendance_result = await db.execute(
+            select(
+                func.count(Attendance.id).label("total"),
+                func.sum(func.cast(Attendance.status == AttendanceStatus.PRESENT, Integer)).label("present"),
+                func.sum(func.cast(Attendance.status == AttendanceStatus.ABSENT, Integer)).label("absent"),
+                func.sum(func.cast(Attendance.status == AttendanceStatus.LATE, Integer)).label("late"),
+                func.sum(func.cast(Attendance.status == AttendanceStatus.HALF_DAY, Integer)).label("half_day"),
+                func.sum(func.cast(Attendance.status == AttendanceStatus.ON_LEAVE, Integer)).label("on_leave"),
+            ).where(
+                Attendance.student_id == student_id,
+                Attendance.tenant_id == current_user.tenant_id,
+                Attendance.attendance_type == AttendanceType.STUDENT
+            )
+        )
+        att_row = attendance_result.fetchone()
+        
+        total_attendance = att_row.total or 0
+        present_count = att_row.present or 0
+        attendance_percentage = round((present_count / total_attendance * 100), 2) if total_attendance > 0 else 0
+        
+        attendance_summary = {
+            "total_days": total_attendance,
+            "present": present_count,
+            "absent": att_row.absent or 0,
+            "late": att_row.late or 0,
+            "half_day": att_row.half_day or 0,
+            "on_leave": att_row.on_leave or 0,
+            "attendance_percentage": attendance_percentage
+        }
+        
+        # Get exam results summary
+        exam_result = await db.execute(
+            select(
+                func.count(ExamResult.id).label("total"),
+                func.sum(func.cast(ExamResult.is_passed == True, Integer)).label("passed"),
+                func.avg(ExamResult.percentage).label("avg_percentage"),
+                func.avg(ExamResult.grade_point).label("avg_grade_point"),
+            ).where(
+                ExamResult.student_id == student_id,
+                ExamResult.tenant_id == current_user.tenant_id,
+                ExamResult.is_absent == False
+            )
+        )
+        exam_row = exam_result.fetchone()
+        
+        # Get recent exam results with exam names
+        recent_results_query = await db.execute(
+            select(ExamResult, Examination).join(
+                Examination, ExamResult.examination_id == Examination.id
+            ).where(
+                ExamResult.student_id == student_id,
+                ExamResult.tenant_id == current_user.tenant_id
+            ).order_by(ExamResult.created_at.desc()).limit(5)
+        )
+        recent_results = []
+        for result_row, exam in recent_results_query.fetchall():
+            recent_results.append({
+                "exam_name": exam.name,
+                "subject": exam.subject,
+                "marks_obtained": result_row.marks_obtained,
+                "max_marks": exam.max_marks,
+                "percentage": result_row.percentage,
+                "grade": result_row.grade,
+                "is_passed": result_row.is_passed,
+                "rank": result_row.rank,
+                "exam_date": exam.exam_date.isoformat() if exam.exam_date else None
+            })
+        
+        exam_summary = {
+            "exams_taken": exam_row.total or 0,
+            "exams_passed": exam_row.passed or 0,
+            "average_percentage": round(exam_row.avg_percentage or 0, 2),
+            "average_grade_point": round(exam_row.avg_grade_point or 0, 2),
+            "recent_results": recent_results
+        }
+        
+        # Get fee summary
+        fee_result = await db.execute(
+            select(
+                func.sum(FeePayment.total_amount).label("total_fees"),
+                func.sum(FeePayment.paid_amount).label("paid"),
+            ).where(
+                FeePayment.student_id == student_id,
+                FeePayment.tenant_id == current_user.tenant_id
+            )
+        )
+        fee_row = fee_result.fetchone()
+        
+        total_fees = float(fee_row.total_fees or 0)
+        paid_amount = float(fee_row.paid or 0)
+        
+        # Get recent payments
+        recent_payments_result = await db.execute(
+            select(FeePayment).where(
+                FeePayment.student_id == student_id,
+                FeePayment.tenant_id == current_user.tenant_id
+            ).order_by(FeePayment.created_at.desc()).limit(5)
+        )
+        recent_payments = []
+        for payment in recent_payments_result.scalars().all():
+            recent_payments.append({
+                "id": str(payment.id),
+                "fee_type": payment.fee_type,
+                "total_amount": float(payment.total_amount),
+                "amount_paid": float(payment.paid_amount),
+                "due_date": payment.due_date.isoformat() if payment.due_date else None,
+                "status": payment.status.value if payment.status else "pending"
+            })
+        
+        fee_summary = {
+            "total_fees": total_fees,
+            "paid": paid_amount,
+            "pending": total_fees - paid_amount,
+            "payment_percentage": round((paid_amount / total_fees * 100), 2) if total_fees > 0 else 100,
+            "recent_payments": recent_payments
+        }
+        
+        # Academic progress
+        academic_progress = {
+            "current_year": student.year,
+            "current_semester": student.semester,
+            "course": student.course,
+            "department": student.department,
+            "cgpa": exam_summary["average_grade_point"],
+            "class": class_info
+        }
+        
+        # Build full response
+        student_data = {
+            "id": str(student.id),
+            "admission_number": student.admission_number,
+            "roll_number": student.roll_number,
+            "first_name": student.first_name,
+            "middle_name": student.middle_name,
+            "last_name": student.last_name,
+            "full_name": student.full_name,
+            "date_of_birth": student.date_of_birth.isoformat() if student.date_of_birth else None,
+            "gender": student.gender.value if student.gender else None,
+            "blood_group": student.blood_group,
+            "email": student.email,
+            "phone": student.phone,
+            "alternate_phone": student.alternate_phone,
+            "nationality": student.nationality,
+            "category": student.category,
+            "address_line1": student.address_line1,
+            "address_line2": student.address_line2,
+            "city": student.city,
+            "state": student.state,
+            "pincode": student.pincode,
+            "country": student.country,
+            "avatar_url": student.avatar_url,
+            "father_name": student.father_name,
+            "father_phone": student.father_phone,
+            "father_occupation": student.father_occupation,
+            "mother_name": student.mother_name,
+            "mother_phone": student.mother_phone,
+            "mother_occupation": student.mother_occupation,
+            "guardian_name": student.guardian_name,
+            "guardian_phone": student.guardian_phone,
+            "guardian_relation": student.guardian_relation,
+            "parent_email": student.parent_email,
+            "status": student.status.value if student.status else "active",
+            "created_at": student.created_at.isoformat(),
+        }
+        
+        return {
+            "student": student_data,
+            "enrollment_journey": enrollment_journey,
+            "attendance_summary": attendance_summary,
+            "exam_summary": exam_summary,
+            "fee_summary": fee_summary,
+            "academic_progress": academic_progress
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting student profile: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+
 @router.put("/{student_id}", response_model=StudentResponse)
 @require_permission("students", "update")
 async def update_student(
@@ -408,6 +705,72 @@ async def update_student(
         logger.error(f"Error updating student: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while updating")
+
+
+@router.delete("/bulk", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("students", "delete")
+async def bulk_delete_students(
+    request: Request,
+    student_ids: List[UUID] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Soft delete multiple students.
+    Only allowed for University Admins and Super Admins.
+    """
+    from datetime import datetime
+    from app.models.role import RoleLevel
+    from app.models.student import Student
+    from sqlalchemy import update
+
+    # Verify Role Level (Must be University Admin or Super Admin)
+    # We assume current_user.roles is available/loaded. 
+    # If using lazy loading, we might need to explicit join, but let's try assuming it's accessible or use a query.
+    
+    # Check permissions using DB query to be safe with Async
+    user_roles_query = await db.execute(
+        select(Role.level).join(UserRole).where(UserRole.user_id == current_user.id)
+    )
+    role_levels = user_roles_query.scalars().all()
+    
+    is_authorized = any(level <= RoleLevel.UNIVERSITY_ADMIN.value for level in role_levels)
+    
+    if not is_authorized:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bulk delete is restricted to University Administrators only."
+        )
+
+    try:
+        # Perform bulk HARD delete
+        # 1. Delete related FeePayments first to avoid FK constraints
+        # (Assuming no other strict FKs block this, or we should add them here)
+        await db.execute(
+            delete(FeePayment).where(
+                FeePayment.student_id.in_(student_ids),
+                FeePayment.tenant_id == current_user.tenant_id
+            )
+        )
+        
+        # 2. Delete Students
+        stmt = delete(Student).where(
+            Student.id.in_(student_ids),
+            Student.tenant_id == current_user.tenant_id,
+        )
+        
+        result = await db.execute(stmt)
+        await db.commit()
+        
+        if result.rowcount == 0:
+            pass
+            
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error bulk deleting students: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred while deleting students")
 
 
 @router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -517,3 +880,182 @@ async def import_students(
             status_code=500,
             detail="An error occurred during import"
         )
+
+
+@router.get("/{student_id}/id-card")
+@require_permission("students", "read")
+async def download_id_card(
+    request: Request,
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download student ID card as PDF."""
+    from app.utils.pdf_utils import generate_id_card_pdf
+    from app.utils.pdf_utils import generate_id_card_pdf
+    from app.models.academic import SchoolClass
+    from app.models.tenant import Tenant
+    
+    try:
+        # Get student
+        result = await db.execute(
+            select(Student).where(
+                Student.id == student_id,
+                Student.tenant_id == current_user.tenant_id,
+                Student.is_deleted == False
+            )
+        )
+        student = result.scalar_one_or_none()
+        
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        # Get class info
+        class_info = None
+        if student.class_id:
+            class_result = await db.execute(
+                select(SchoolClass).where(SchoolClass.id == student.class_id)
+            )
+            school_class = class_result.scalar_one_or_none()
+            if school_class:
+                class_info = {
+                    "name": school_class.name,
+                    "section": school_class.section
+                }
+        
+        # Get tenant info from database
+        tenant_result = await db.execute(
+            select(Tenant).where(Tenant.id == current_user.tenant_id)
+        )
+        tenant = tenant_result.scalar_one_or_none()
+        tenant_info = {
+            "name": tenant.name if tenant else "Educational Institution",
+            "address": getattr(tenant, "address", "") if tenant else ""
+        }
+        
+        # Generate PDF
+        student_data = {
+            "id": str(student.id),
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "admission_number": student.admission_number,
+            "course": student.course,
+            "blood_group": student.blood_group,
+            "phone": student.phone,
+        }
+        
+        pdf_buffer = generate_id_card_pdf(student_data, tenant_info, class_info)
+        
+        filename = f"id_card_{student.admission_number}.pdf"
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating ID card: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate ID card")
+
+
+@router.get("/{student_id}/transcript")
+@require_permission("students", "read")
+async def download_transcript(
+    request: Request,
+    student_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download student academic transcript as PDF."""
+    from app.utils.pdf_utils import generate_transcript_pdf
+    from app.utils.pdf_utils import generate_transcript_pdf
+    from app.models.examination import ExamResult
+    from app.models.tenant import Tenant
+    
+    try:
+        # Get student
+        result = await db.execute(
+            select(Student).where(
+                Student.id == student_id,
+                Student.tenant_id == current_user.tenant_id,
+                Student.is_deleted == False
+            )
+        )
+        student = result.scalar_one_or_none()
+        
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        # Get exam results
+        exams_result = await db.execute(
+            select(ExamResult).where(
+                ExamResult.student_id == student_id,
+                ExamResult.tenant_id == current_user.tenant_id
+            ).order_by(ExamResult.created_at.desc())
+        )
+        exam_records = exams_result.scalars().all()
+        
+        exams = []
+        for exam in exam_records:
+            exams.append({
+                "exam_name": exam.exam_name if hasattr(exam, 'exam_name') else "Exam",
+                "subject": exam.subject if hasattr(exam, 'subject') else "Subject",
+                "max_marks": exam.max_marks if hasattr(exam, 'max_marks') else 100,
+                "marks_obtained": exam.marks_obtained if hasattr(exam, 'marks_obtained') else 0,
+                "grade": exam.grade if hasattr(exam, 'grade') else "-",
+                "is_passed": exam.is_passed if hasattr(exam, 'is_passed') else True,
+                "passing_marks": exam.passing_marks if hasattr(exam, 'passing_marks') else 35
+            })
+        
+        # Get tenant info from database
+        tenant_result = await db.execute(
+            select(Tenant).where(Tenant.id == current_user.tenant_id)
+        )
+        tenant = tenant_result.scalar_one_or_none()
+        tenant_info = {
+            "name": tenant.name if tenant else "Educational Institution"
+        }
+        
+        # Student data
+        student_data = {
+            "first_name": student.first_name,
+            "middle_name": student.middle_name or "",
+            "last_name": student.last_name,
+            "admission_number": student.admission_number,
+            "course": student.course,
+            "department": student.department,
+            "date_of_birth": student.date_of_birth.isoformat() if student.date_of_birth else "N/A"
+        }
+        
+        # Academic info (calculate from exams if available)
+        academic_info = None
+        if exams:
+            total_marks = sum(e.get("marks_obtained", 0) for e in exams)
+            max_marks = sum(e.get("max_marks", 100) for e in exams)
+            if max_marks > 0:
+                percentage = (total_marks / max_marks) * 100
+                # Simple CGPA approximation (percentage / 10)
+                academic_info = {
+                    "cgpa": round(percentage / 10, 2),
+                    "total_credits": len(exams) * 3  # Approximate
+                }
+        
+        pdf_buffer = generate_transcript_pdf(student_data, exams, tenant_info, academic_info)
+        
+        filename = f"transcript_{student.admission_number}.pdf"
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating transcript: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate transcript")
+

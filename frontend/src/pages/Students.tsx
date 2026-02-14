@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import { selectRoleLevel } from '@/store/slices/authSlice';
 import {
     Box, Typography, Card, CardContent, Grid, Avatar, Chip, IconButton,
     TextField, InputAdornment, Button, Dialog, DialogTitle, DialogContent,
@@ -21,6 +23,7 @@ import {
     ViewList as ViewListIcon,
     ViewModule as ViewModuleIcon,
     MoreVert as MoreVertIcon,
+    Visibility as VisibilityIcon,
 } from '@mui/icons-material';
 import {
     useGetStudentsQuery,
@@ -28,6 +31,7 @@ import {
     useUpdateStudentMutation,
     useDeleteStudentMutation,
     useImportStudentsMutation,
+    useBulkDeleteStudentsMutation,
     useLazyExportStudentsQuery,
     useLazyDownloadTemplateQuery,
 } from '@/store/api/studentApi';
@@ -40,6 +44,7 @@ import {
 import type { FeePayment } from '@/store/api/feeApi';
 import { useGetClassesQuery } from '@/store/api/academicApi';
 import { toast } from 'react-toastify';
+import StudentProfileDialog from '@/components/StudentProfileDialog';
 
 interface FeeFormItem {
     id?: string; // Existing fee ID for updates
@@ -102,6 +107,7 @@ const initialFormData: StudentCreateRequest = {
 
 const StudentsPage: React.FC = () => {
     const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
     const [search, setSearch] = useState('');
     const [classFilter, setClassFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -121,6 +127,9 @@ const StudentsPage: React.FC = () => {
     const [importResult, setImportResult] = useState<StudentImportResult | null>(null);
     const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
 
+    // View Student Details state
+    const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+
     // Student Form state
     const [formData, setFormData] = useState<StudentCreateRequest>(initialFormData);
 
@@ -131,7 +140,7 @@ const StudentsPage: React.FC = () => {
     const { data: classes } = useGetClassesQuery();
     const { data, isLoading, error, refetch } = useGetStudentsQuery({
         page,
-        pageSize: viewMode === 'grid' ? 9 : 10,
+        pageSize,
         search: search || undefined,
         class_id: classFilter || undefined,
         status: statusFilter || undefined,
@@ -147,7 +156,7 @@ const StudentsPage: React.FC = () => {
 
     // Fetch student's fees when editing
     const { data: studentFees, refetch: refetchFees } = useGetFeePaymentsQuery(
-        { studentId: editingStudent?.id, page: 1, pageSize: 50 },
+        { student_id: editingStudent?.id, page: 1, pageSize: 50 },
         { skip: !editingStudent?.id }
     );
 
@@ -477,6 +486,39 @@ const StudentsPage: React.FC = () => {
         setImportResult(null);
     };
 
+    // Bulk Delete Logic
+    const roleLevel = useSelector(selectRoleLevel);
+    const isUniversityAdmin = roleLevel <= 1; // 0=Super, 1=University
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [bulkDeleteStudents] = useBulkDeleteStudentsMutation();
+
+    const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (event.target.checked && data?.items) {
+            setSelectedIds(data.items.map((student) => student.id));
+        } else {
+            setSelectedIds([]);
+        }
+    };
+
+    const handleSelectOne = (id: string) => {
+        setSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+        );
+    };
+
+    const handleBulkDelete = async () => {
+        if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} students? This action cannot be undone.`)) return;
+
+        try {
+            await bulkDeleteStudents(selectedIds).unwrap();
+            toast.success(`${selectedIds.length} students deleted successfully`);
+            setSelectedIds([]);
+            refetch();
+        } catch (err: any) {
+            toast.error(err?.data?.detail || 'Failed to delete students');
+        }
+    };
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
@@ -493,6 +535,17 @@ const StudentsPage: React.FC = () => {
                     </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2 }}>
+                    {selectedIds.length > 0 && isUniversityAdmin && (
+                        <Button
+                            variant="contained"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={handleBulkDelete}
+                            sx={{ borderRadius: 3 }}
+                        >
+                            Delete ({selectedIds.length})
+                        </Button>
+                    )}
                     <Button
                         variant="outlined"
                         startIcon={<UploadIcon />}
@@ -576,13 +629,16 @@ const StudentsPage: React.FC = () => {
                 <Grid container spacing={3}>
                     {data?.items.map((student) => (
                         <Grid item xs={12} sm={6} md={4} key={student.id}>
-                            <Card sx={{ height: '100%' }}>
+                            <Card sx={{ height: '100%', cursor: 'pointer', '&:hover': { boxShadow: 6 } }} onClick={() => setViewStudentId(student.id)}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                                         <Avatar sx={{ width: 64, height: 64, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fontSize: '1.5rem' }}>
                                             {student.first_name[0]}{student.last_name[0]}
                                         </Avatar>
-                                        <Box>
+                                        <Box onClick={(e) => e.stopPropagation()}>
+                                            <Tooltip title="View Details">
+                                                <IconButton size="small" onClick={() => setViewStudentId(student.id)}><VisibilityIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
                                             </Tooltip>
@@ -621,6 +677,15 @@ const StudentsPage: React.FC = () => {
                         <Table>
                             <TableHead>
                                 <TableRow>
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            color="primary"
+                                            indeterminate={selectedIds.length > 0 && selectedIds.length < (data?.items.length || 0)}
+                                            checked={(data?.items?.length ?? 0) > 0 && selectedIds.length === (data?.items?.length ?? 0)}
+                                            onChange={handleSelectAll}
+                                            disabled={!isUniversityAdmin}
+                                        />
+                                    </TableCell>
                                     <TableCell>Student</TableCell>
                                     <TableCell>Admission No.</TableCell>
                                     <TableCell>Email</TableCell>
@@ -631,14 +696,22 @@ const StudentsPage: React.FC = () => {
                             </TableHead>
                             <TableBody>
                                 {data?.items.map((student) => (
-                                    <TableRow key={student.id} hover>
+                                    <TableRow key={student.id} hover selected={selectedIds.includes(student.id)}>
+                                        <TableCell padding="checkbox">
+                                            <Checkbox
+                                                color="primary"
+                                                checked={selectedIds.includes(student.id)}
+                                                onChange={() => handleSelectOne(student.id)}
+                                                disabled={!isUniversityAdmin}
+                                            />
+                                        </TableCell>
                                         <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }} onClick={() => setViewStudentId(student.id)}>
                                                 <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
                                                     {student.first_name[0]}{student.last_name[0]}
                                                 </Avatar>
                                                 <Box>
-                                                    <Typography variant="body2" fontWeight={600}>{student.first_name} {student.last_name}</Typography>
+                                                    <Typography variant="body2" fontWeight={600} sx={{ '&:hover': { color: 'primary.main' } }}>{student.first_name} {student.last_name}</Typography>
                                                     <Typography variant="caption" color="text.secondary">{student.phone || '-'}</Typography>
                                                 </Box>
                                             </Box>
@@ -660,6 +733,9 @@ const StudentsPage: React.FC = () => {
                                             />
                                         </TableCell>
                                         <TableCell align="right">
+                                            <Tooltip title="View Details">
+                                                <IconButton size="small" onClick={() => setViewStudentId(student.id)}><VisibilityIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
                                             </Tooltip>
@@ -698,9 +774,55 @@ const StudentsPage: React.FC = () => {
                 ))}
             </Menu>
 
-            {data && data.total_pages > 1 && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <Pagination count={data.total_pages} page={page} onChange={(_, p) => setPage(p)} color="primary" />
+            {/* Pagination with page size selector */}
+            {data && (
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mt: 4,
+                    flexWrap: 'wrap',
+                    gap: 2
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" color="text.secondary">
+                            Showing {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, data.total)} of {data.total} students
+                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" color="text.secondary">Per page:</Typography>
+                            <FormControl size="small" sx={{ minWidth: 70 }}>
+                                <Select
+                                    value={pageSize}
+                                    onChange={(e) => {
+                                        setPageSize(Number(e.target.value));
+                                        setPage(1); // Reset to first page when page size changes
+                                    }}
+                                    size="small"
+                                >
+                                    <MenuItem value={10}>10</MenuItem>
+                                    <MenuItem value={25}>25</MenuItem>
+                                    <MenuItem value={50}>50</MenuItem>
+                                    <MenuItem value={100}>100</MenuItem>
+                                    <MenuItem value={150}>150</MenuItem>
+                                    <MenuItem value={200}>200</MenuItem>
+                                    <MenuItem value={250}>250</MenuItem>
+                                    <MenuItem value={300}>300</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Box>
+                        {data.total_pages > 1 && (
+                            <Pagination
+                                count={data.total_pages}
+                                page={page}
+                                onChange={(_, p) => setPage(p)}
+                                color="primary"
+                                showFirstButton
+                                showLastButton
+                            />
+                        )}
+                    </Box>
                 </Box>
             )}
 
@@ -1004,6 +1126,13 @@ const StudentsPage: React.FC = () => {
                     )}
                 </DialogActions>
             </Dialog>
+
+            {/* Student Profile Dialog */}
+            <StudentProfileDialog
+                open={!!viewStudentId}
+                studentId={viewStudentId}
+                onClose={() => setViewStudentId(null)}
+            />
 
             {/* Export Menu */}
             <Menu

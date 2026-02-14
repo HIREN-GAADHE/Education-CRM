@@ -63,9 +63,11 @@ export interface ExamResult {
     marks_obtained: number | null;
     grade?: string;
     grade_point?: number;
-    percentage?: number;    // Added
+    percentage?: number;
     is_absent: boolean;
     is_exempted: boolean;
+    is_passed?: boolean;
+    rank?: number;
     exemption_reason?: string;
     remarks?: string;
     verified: boolean;
@@ -249,6 +251,13 @@ export const examinationApi = apiSlice.injectEndpoints({
             }),
             invalidatesTags: ['Examination'],
         }),
+        deleteResult: builder.mutation<void, { examinationId: string; resultId: string }>({
+            query: ({ examinationId, resultId }) => ({
+                url: `/examinations/${examinationId}/results/${resultId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['Examination'],
+        }),
 
         // Statistics
         getExamStatistics: builder.query<ExamStatistics, string>({
@@ -291,6 +300,7 @@ export const {
     useGetExamResultsQuery,
     useEnterResultMutation,
     useBulkEnterResultsMutation,
+    useDeleteResultMutation,
     useGetExamStatisticsQuery,
     useGetStudentTranscriptQuery,
     useCalculateGPAMutation,

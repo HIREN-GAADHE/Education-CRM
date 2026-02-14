@@ -545,7 +545,8 @@ const ExaminationsPage: React.FC = () => {
                         <TableContainer component={Paper} variant="outlined">
                             <Table>
                                 <TableHead>
-                                    <TableRow sx={{ bgcolor: 'grey.100' }}>
+                                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                                        <TableCell>Rank</TableCell>
                                         <TableCell>Roll No</TableCell>
                                         <TableCell>Student Name</TableCell>
                                         <TableCell>Marks</TableCell>
@@ -557,9 +558,26 @@ const ExaminationsPage: React.FC = () => {
                                 <TableBody>
                                     {resultsData.items.map(result => {
                                         const maxMarks = selectedExamForResults?.max_marks || 100;
+                                        const passingMarks = selectedExamForResults?.passing_marks || 35;
                                         const percentage = result.percentage ?? ((result.marks_obtained || 0) / maxMarks * 100);
+                                        // Use backend is_passed if available, otherwise calculate
+                                        const isPassed = result.is_passed !== null && result.is_passed !== undefined
+                                            ? result.is_passed
+                                            : (result.marks_obtained ?? 0) >= passingMarks;
                                         return (
                                             <TableRow key={result.id}>
+                                                <TableCell>
+                                                    {result.is_absent ? '-' : (
+                                                        result.rank && result.rank <= 3 ? (
+                                                            <Chip
+                                                                label={`#${result.rank}`}
+                                                                size="small"
+                                                                color={result.rank === 1 ? 'warning' : result.rank === 2 ? 'info' : 'default'}
+                                                                sx={{ fontWeight: 'bold' }}
+                                                            />
+                                                        ) : result.rank || '-'
+                                                    )}
+                                                </TableCell>
                                                 <TableCell>{result.student_roll_number || '-'}</TableCell>
                                                 <TableCell>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -581,7 +599,7 @@ const ExaminationsPage: React.FC = () => {
                                                                 variant="determinate"
                                                                 value={Math.min(percentage, 100)}
                                                                 sx={{ width: 100, height: 8, borderRadius: 4 }}
-                                                                color={percentage >= 40 ? 'success' : 'error'}
+                                                                color={isPassed ? 'success' : 'error'}
                                                             />
                                                             {percentage.toFixed(1)}%
                                                         </Box>
@@ -601,7 +619,7 @@ const ExaminationsPage: React.FC = () => {
                                                         <Chip label="Absent" color="error" size="small" />
                                                     ) : result.is_exempted ? (
                                                         <Chip label="Exempted" color="info" size="small" />
-                                                    ) : percentage >= (selectedExamForResults?.passing_marks || 35) ? (
+                                                    ) : isPassed ? (
                                                         <Chip label="Pass" color="success" size="small" />
                                                     ) : (
                                                         <Chip label="Fail" color="error" size="small" />

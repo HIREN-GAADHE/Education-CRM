@@ -101,7 +101,7 @@ const navSections: NavSection[] = [
     {
         title: 'Services',
         items: [
-            { label: 'R&D Hub', path: '/marketplace', icon: <MarketplaceIcon />, badge: 'Pro', badgeColor: 'info', moduleKey: 'marketplace' },
+            { label: 'L&D Hub', path: '/marketplace', icon: <MarketplaceIcon />, badge: 'Pro', badgeColor: 'info', moduleKey: 'marketplace' },
         ],
     },
     {

@@ -48,6 +48,9 @@ pillow==10.2.0
 pandas==2.1.4
 openpyxl==3.1.2
 
+## PDF Generation
+reportlab==4.0.8
+
 ## Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3

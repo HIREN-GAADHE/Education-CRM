@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectRoleLevel } from '@/store/slices/authSlice';
 import {
@@ -44,7 +45,7 @@ import {
 import type { FeePayment } from '@/store/api/feeApi';
 import { useGetClassesQuery } from '@/store/api/academicApi';
 import { toast } from 'react-toastify';
-import StudentProfileDialog from '@/components/StudentProfileDialog';
+// import StudentProfileDialog from '@/components/StudentProfileDialog'; // Removed
 
 interface FeeFormItem {
     id?: string; // Existing fee ID for updates
@@ -106,6 +107,7 @@ const initialFormData: StudentCreateRequest = {
 };
 
 const StudentsPage: React.FC = () => {
+    const navigate = useNavigate();
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
     const [search, setSearch] = useState('');
@@ -128,7 +130,7 @@ const StudentsPage: React.FC = () => {
     const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
 
     // View Student Details state
-    const [viewStudentId, setViewStudentId] = useState<string | null>(null);
+    // const [viewStudentId, setViewStudentId] = useState<string | null>(null); // Removed
 
     // Student Form state
     const [formData, setFormData] = useState<StudentCreateRequest>(initialFormData);
@@ -629,7 +631,7 @@ const StudentsPage: React.FC = () => {
                 <Grid container spacing={3}>
                     {data?.items.map((student) => (
                         <Grid item xs={12} sm={6} md={4} key={student.id}>
-                            <Card sx={{ height: '100%', cursor: 'pointer', '&:hover': { boxShadow: 6 } }} onClick={() => setViewStudentId(student.id)}>
+                            <Card sx={{ height: '100%', cursor: 'pointer', '&:hover': { boxShadow: 6 } }} onClick={() => navigate(`/students/${student.id}`)}>
                                 <CardContent sx={{ p: 3 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                                         <Avatar sx={{ width: 64, height: 64, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fontSize: '1.5rem' }}>
@@ -637,7 +639,7 @@ const StudentsPage: React.FC = () => {
                                         </Avatar>
                                         <Box onClick={(e) => e.stopPropagation()}>
                                             <Tooltip title="View Details">
-                                                <IconButton size="small" onClick={() => setViewStudentId(student.id)}><VisibilityIcon fontSize="small" /></IconButton>
+                                                <IconButton size="small" onClick={() => navigate(`/students/${student.id}`)}><VisibilityIcon fontSize="small" /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
@@ -706,7 +708,7 @@ const StudentsPage: React.FC = () => {
                                             />
                                         </TableCell>
                                         <TableCell>
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }} onClick={() => setViewStudentId(student.id)}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }} onClick={() => navigate(`/students/${student.id}`)}>
                                                 <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
                                                     {student.first_name[0]}{student.last_name[0]}
                                                 </Avatar>
@@ -734,7 +736,7 @@ const StudentsPage: React.FC = () => {
                                         </TableCell>
                                         <TableCell align="right">
                                             <Tooltip title="View Details">
-                                                <IconButton size="small" onClick={() => setViewStudentId(student.id)}><VisibilityIcon fontSize="small" /></IconButton>
+                                                <IconButton size="small" onClick={() => navigate(`/students/${student.id}`)}><VisibilityIcon fontSize="small" /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton size="small" onClick={() => handleOpenEdit(student)}><EditIcon fontSize="small" /></IconButton>
@@ -1127,12 +1129,7 @@ const StudentsPage: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            {/* Student Profile Dialog */}
-            <StudentProfileDialog
-                open={!!viewStudentId}
-                studentId={viewStudentId}
-                onClose={() => setViewStudentId(null)}
-            />
+
 
             {/* Export Menu */}
             <Menu

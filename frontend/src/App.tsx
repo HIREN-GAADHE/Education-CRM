@@ -31,6 +31,7 @@ import RolesPage from './pages/Roles';
 import SettingsPage from './pages/Settings';
 import ProfilePage from './pages/Profile';
 import StudentsPage from './pages/Students';
+import StudentDetailsPage from './pages/StudentDetails';
 import CoursesPage from './pages/Courses';
 import FeesPage from './pages/Fees';
 import AttendancePage from './pages/Attendance';
@@ -134,6 +135,7 @@ const App: React.FC = () => {
                     <Route path="users" element={<UsersPage />} />
                     <Route path="roles" element={<RolesPage />} />
                     <Route path="students" element={<StudentsPage />} />
+                    <Route path="students/:id" element={<StudentDetailsPage />} />
                     <Route path="classes" element={<ClassesPage />} /> {/* Added */}
                     <Route path="courses" element={<CoursesPage />} />
                     <Route path="fees" element={<FeesPage />} />

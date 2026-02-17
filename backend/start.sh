@@ -5,11 +5,11 @@ echo "Starting deployment checks..."
 
 # 1. Run Database Migrations (L&D Hub)
 echo "Running L&D Hub migrations..."
-python scripts/create_learning_tables.py
+python -m scripts.create_learning_tables
 
 # 2. Seed L&D Content (Safe/Idempotent)
 echo "Seeding L&D Hub content..."
-python scripts/seed_learning.py
+python -m scripts.seed_learning
 
 # 3. Run General Seed if requested (Legacy/Existing)
 if [ "$RUN_SEED" = "true" ]; then

@@ -2,7 +2,9 @@ from sqlalchemy import create_engine, text
 from app.config.settings import settings
 
 def create_learning_tables():
-    engine = create_engine(settings.DATABASE_URL)
+    # Force sync driver for this script
+    db_url = settings.DATABASE_URL.replace('+asyncpg', '')
+    engine = create_engine(db_url)
     
     print("Creating/Updating Learning Hub tables...")
     

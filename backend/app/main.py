@@ -142,6 +142,16 @@ def create_application() -> FastAPI:
         os.makedirs(upload_dir)
     app.mount("/static", StaticFiles(directory=upload_dir), name="static")
     
+    # Root endpoint
+    @app.get("/")
+    async def root():
+        return {
+            "message": "Welcome to EduERP API",
+            "docs": "/docs",
+            "version": settings.APP_VERSION,
+            "status": "operational"
+        }
+    
     # Health check endpoint (at root level)
     @app.get("/health")
     async def health_check():

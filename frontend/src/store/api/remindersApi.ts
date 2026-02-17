@@ -52,6 +52,26 @@ export interface SendReceiptRequest {
     channels: ('email' | 'sms' | 'in_app')[];
 }
 
+export interface ReminderTemplateCreate {
+    name: string;
+    type: 'email' | 'sms' | 'in_app';
+    trigger_type?: string;
+    subject?: string;
+    body: string;
+    is_active?: boolean;
+    is_default?: boolean;
+}
+
+export interface ReminderTemplateUpdate {
+    name?: string;
+    type?: 'email' | 'sms' | 'in_app';
+    trigger_type?: string;
+    subject?: string;
+    body?: string;
+    is_active?: boolean;
+    is_default?: boolean;
+}
+
 export const remindersApi = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
         getReminderSettings: builder.query<ReminderSettings, void>({
@@ -69,6 +89,29 @@ export const remindersApi = apiSlice.injectEndpoints({
         getReminderTemplates: builder.query<ReminderTemplate[], void>({
             query: () => '/reminders/templates',
             providesTags: ['ReminderTemplates'],
+        }),
+        createReminderTemplate: builder.mutation<ReminderTemplate, ReminderTemplateCreate>({
+            query: (body) => ({
+                url: '/reminders/templates',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['ReminderTemplates'],
+        }),
+        updateReminderTemplate: builder.mutation<ReminderTemplate, { id: string; data: ReminderTemplateUpdate }>({
+            query: ({ id, data }) => ({
+                url: `/reminders/templates/${id}`,
+                method: 'PUT',
+                body: data,
+            }),
+            invalidatesTags: ['ReminderTemplates'],
+        }),
+        deleteReminderTemplate: builder.mutation<void, string>({
+            query: (id) => ({
+                url: `/reminders/templates/${id}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['ReminderTemplates'],
         }),
         sendReminders: builder.mutation<void, SendReminderRequest>({
             query: (body) => ({
@@ -98,7 +141,11 @@ export const {
     useGetReminderSettingsQuery,
     useUpdateReminderSettingsMutation,
     useGetReminderTemplatesQuery,
+    useCreateReminderTemplateMutation,
+    useUpdateReminderTemplateMutation,
+    useDeleteReminderTemplateMutation,
     useSendRemindersMutation,
     useBulkSendRemindersMutation,
     useSendReceiptMutation,
 } = remindersApi;
+

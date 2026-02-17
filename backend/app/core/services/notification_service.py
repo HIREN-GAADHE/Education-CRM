@@ -30,13 +30,14 @@ class EmailService:
     """
     
     def __init__(self):
-        self.host = settings.SMTP_HOST
-        self.port = settings.SMTP_PORT
-        self.username = settings.SMTP_USER
-        self.password = settings.SMTP_PASSWORD
-        self.from_email = settings.SMTP_FROM_EMAIL
-        self.from_name = settings.SMTP_FROM_NAME
-        self.use_tls = settings.SMTP_USE_TLS
+        # Default global settings (fallback)
+        self.default_host = settings.SMTP_HOST
+        self.default_port = settings.SMTP_PORT
+        self.default_username = settings.SMTP_USER
+        self.default_password = settings.SMTP_PASSWORD
+        self.default_from_email = settings.SMTP_FROM_EMAIL
+        self.default_from_name = settings.SMTP_FROM_NAME
+        self.default_use_tls = settings.SMTP_USE_TLS
     
     async def send(
         self,
@@ -45,6 +46,7 @@ class EmailService:
         body: str,
         html_body: Optional[str] = None,
         to_name: Optional[str] = None,
+        smtp_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Send an email using SMTP.
@@ -53,6 +55,20 @@ class EmailService:
             Dict with success status and provider info
         """
         try:
+            # Use provided config or fallback to defaults
+            config = smtp_config or {}
+            host = config.get("host") or self.default_host
+            port = config.get("port") or self.default_port
+            username = config.get("username") or self.default_username
+            password = config.get("password") or self.default_password
+            from_email = config.get("from_email") or self.default_from_email
+            from_name = config.get("from_name") or self.default_from_name
+            
+            # Determine security (default to TLS if not specified or if using global default which is boolean)
+            # If config has 'security', it might be 'tls', 'ssl', 'none'.
+            security = config.get("security", "tls")
+            use_tls = security == "tls" or (security is None and self.default_use_tls)
+
             # Create message
             if html_body:
                 message = MIMEMultipart("alternative")
@@ -62,26 +78,32 @@ class EmailService:
                 message = MIMEText(body, "plain")
             
             message["Subject"] = subject
-            message["From"] = f"{self.from_name} <{self.from_email}>"
+            message["From"] = f"{from_name} <{from_email}>"
             message["To"] = f"{to_name} <{to_email}>" if to_name else to_email
             
             # Send email
-            if self.use_tls:
+            if use_tls:
                 await aiosmtplib.send(
                     message,
-                    hostname=self.host,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
+                    hostname=host,
+                    port=port,
+                    username=username,
+                    password=password,
                     start_tls=True,
                 )
             else:
+                # SSL or None (aiosmtplib handles SSL via use_tls=True argument, distinct from start_tls)
+                # But here we stick to basic implementation for now. 
+                # If security is 'ssl', we might need use_tls=True in send().
+                # For now assuming 'none' or 'ssl' (implicit port 465).
+                use_ssl = security == "ssl"
                 await aiosmtplib.send(
                     message,
-                    hostname=self.host,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
+                    hostname=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    use_tls=use_ssl, 
                 )
             
             logger.info(f"Email sent successfully to {to_email}")
@@ -240,6 +262,9 @@ class SMSService:
             }
 
 
+
+from app.models.settings import TenantSettings
+
 class NotificationService:
     """
     Main notification service that orchestrates sending notifications.
@@ -369,12 +394,33 @@ class NotificationService:
             if not notification.recipient_email:
                 return {"success": False, "error": "No email address provided"}
             
+            # Fetch Tenant Settings for SMTP config
+            smtp_config = None
+            try:
+                stmt = select(TenantSettings).where(TenantSettings.tenant_id == notification.tenant_id)
+                result = await self.db.execute(stmt)
+                settings = result.scalar_one_or_none()
+                
+                if settings and settings.smtp_host:
+                    smtp_config = {
+                        "host": settings.smtp_host,
+                        "port": settings.smtp_port,
+                        "username": settings.smtp_username,
+                        "password": settings.smtp_password,
+                        "from_email": settings.smtp_from_email,
+                        "from_name": settings.smtp_from_name,
+                        "security": settings.smtp_security,
+                    }
+            except Exception as e:
+                logger.warning(f"Failed to fetch tenant settings for SMTP config: {e}")
+            
             return await self.email_service.send(
                 to_email=notification.recipient_email,
                 subject=notification.subject or "Notification",
                 body=notification.body,
                 html_body=notification.html_body,
                 to_name=notification.recipient_name,
+                smtp_config=smtp_config,
             )
         
         elif notification.notification_type == NotificationType.SMS:

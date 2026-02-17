@@ -41,6 +41,7 @@ import {
     useGetFeePaymentsQuery,
     useCreateFeePaymentMutation,
     useDeleteFeePaymentMutation,
+    useGetFeeStructuresQuery,
 } from '@/store/api/feeApi';
 import type { FeePayment } from '@/store/api/feeApi';
 import { useGetClassesQuery } from '@/store/api/academicApi';
@@ -152,6 +153,7 @@ const StudentsPage: React.FC = () => {
     const [deleteStudent] = useDeleteStudentMutation();
     const [createFee] = useCreateFeePaymentMutation();
     const [deleteFee] = useDeleteFeePaymentMutation();
+    const { data: feeStructures } = useGetFeeStructuresQuery({ active_only: true });
     const [importStudents, { isLoading: isImporting }] = useImportStudentsMutation();
     const [triggerExport] = useLazyExportStudentsQuery();
     const [triggerDownloadTemplate] = useLazyDownloadTemplateQuery();
@@ -240,6 +242,23 @@ const StudentsPage: React.FC = () => {
 
     const addFee = () => {
         setFees([...fees, { ...emptyFee }]);
+    };
+
+    const loadFromStructure = (structureId: string) => {
+        const structure = feeStructures?.find(s => s.id === structureId);
+        if (!structure) return;
+        const newFees: FeeFormItem[] = structure.fee_components
+            .filter(c => !c.optional)
+            .map(c => ({
+                fee_type: c.type || 'other',
+                total_amount: c.amount,
+                academic_year: structure.academic_year || '2025-2026',
+                due_date: '',
+                description: c.name,
+                isNew: true,
+            }));
+        setFees(prev => [...prev, ...newFees]);
+        toast.success(`Loaded ${newFees.length} fees from "${structure.name}"`);
     };
 
     const updateFee = (index: number, field: keyof FeeFormItem, value: any) => {
@@ -943,7 +962,25 @@ const StudentsPage: React.FC = () => {
 
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                                 <Typography variant="subtitle1" fontWeight="bold">Initial Fees</Typography>
-                                <Button startIcon={<AddIcon />} size="small" onClick={addFee}>Add Fee</Button>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    {feeStructures && feeStructures.length > 0 && (
+                                        <FormControl size="small" sx={{ minWidth: 200 }}>
+                                            <InputLabel>Load from Structure</InputLabel>
+                                            <Select
+                                                value=""
+                                                label="Load from Structure"
+                                                onChange={(e) => loadFromStructure(e.target.value)}
+                                            >
+                                                {feeStructures.map(s => (
+                                                    <MenuItem key={s.id} value={s.id}>
+                                                        {s.name} — ₹{s.total_amount.toLocaleString()}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    )}
+                                    <Button startIcon={<AddIcon />} size="small" onClick={addFee}>Add Fee</Button>
+                                </Box>
                             </Box>
 
                             {fees.filter(f => !f.isDeleted).length > 0 ? (

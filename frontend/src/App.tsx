@@ -43,6 +43,10 @@ import TimetablePage from './pages/Timetable';
 import ExaminationsPage from './pages/Examinations';
 import PaymentsPage from './pages/Payments';
 
+import LearningHub from './pages/Learning/LearningHub';
+import LearningPlayer from './pages/Learning/LearningPlayer';
+import LearningModuleManage from './pages/Learning/LearningModuleManage';
+
 import ParentDashboard from './pages/ParentDashboard';
 import StudentDashboard from './pages/StudentDashboard';
 import TransportPage from './pages/Transport';
@@ -138,6 +142,9 @@ const App: React.FC = () => {
                     <Route path="students/:id" element={<StudentDetailsPage />} />
                     <Route path="classes" element={<ClassesPage />} /> {/* Added */}
                     <Route path="courses" element={<CoursesPage />} />
+                    <Route path="learning" element={<LearningHub />} />
+                    <Route path="learning/:id" element={<LearningPlayer />} />
+                    <Route path="learning/:id/manage" element={<LearningModuleManage />} />
                     <Route path="fees" element={<FeesPage />} />
                     <Route path="attendance" element={<AttendancePage />} />
                     <Route path="staff" element={<StaffPage />} />

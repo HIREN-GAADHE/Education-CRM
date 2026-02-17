@@ -12,8 +12,7 @@ from sqlalchemy import select
 
 from app.models.student import Student, StudentStatus
 from app.models.staff import Staff
-from app.models.fee import FeePayment, FeeType, PaymentStatus
-from app.models.attendance import Attendance
+from app.models.fee import FeePayment, FeeType, PaymentStatus, FeeStructure
 from app.models.academic import SchoolClass
 from app.models.staff import Staff, StaffStatus, StaffType, Gender
 from app.models.timetable import TimetableEntry, TimeSlot, Room, DayOfWeek, TimetableStatus, TimetableConflict
@@ -104,6 +103,7 @@ class ImportExportService:
             "admission_type",
             
             # Fee-related fields (optional)
+            "fee_structure",
             "fee_type",
             "fee_amount",
             "academic_year",
@@ -165,6 +165,7 @@ class ImportExportService:
             "Regular",
             
             # Fee
+            "Annual Tuition Fee",
             "tuition",
             "50000",
             "2024-25",
@@ -211,6 +212,15 @@ class ImportExportService:
                 )
             )
             classes = list(class_result.scalars().all())
+
+            # Pre-load all fee structures for this tenant
+            structure_result = await self.db.execute(
+                select(FeeStructure).where(
+                    FeeStructure.tenant_id == tenant_id,
+                    FeeStructure.is_active == True
+                )
+            )
+            fee_structures = list(structure_result.scalars().all())
             
             # Decode and parse CSV
             content = file_content.decode('utf-8')
@@ -293,10 +303,10 @@ class ImportExportService:
                             existing.is_deleted = False
                             existing.status = StudentStatus.ACTIVE
                             await self._update_student_from_row(existing, row, class_id)
-                            # Create fees
-                            fee_created = await self._create_fee_for_student(tenant_id, existing, row, row_num, results)
-                            if fee_created:
-                                results["fees_created"] += 1
+                            # Create fees (both structure based and manual)
+                            fee_created_count = await self._apply_fees(tenant_id, existing, row, row_num, results, fee_structures)
+                            if fee_created_count > 0:
+                                results["fees_created"] += fee_created_count
                             results["imported"] += 1
                             results["imported_ids"].append(str(existing.id))
                             continue
@@ -306,9 +316,9 @@ class ImportExportService:
                             # Update existing student (including class_id)
                             await self._update_student_from_row(existing, row, class_id)
                             # Create fee payment if provided (even for existing students)
-                            fee_created = await self._create_fee_for_student(tenant_id, existing, row, row_num, results)
-                            if fee_created:
-                                results["fees_created"] += 1
+                            fee_created_count = await self._apply_fees(tenant_id, existing, row, row_num, results, fee_structures)
+                            if fee_created_count > 0:
+                                results["fees_created"] += fee_created_count
                             results["updated"] += 1
                             results["imported_ids"].append(str(existing.id))
                         elif skip_duplicates:
@@ -330,9 +340,9 @@ class ImportExportService:
                     await self.db.flush()  # Get student.id before creating fee
                     
                     # Create fee payment if fee details provided
-                    fee_created = await self._create_fee_for_student(tenant_id, student, row, row_num, results)
-                    if fee_created:
-                        results["fees_created"] += 1
+                    fee_created_count = await self._apply_fees(tenant_id, student, row, row_num, results, fee_structures)
+                    if fee_created_count > 0:
+                        results["fees_created"] += fee_created_count
                     
                     results["imported"] += 1
                     results["imported_ids"].append(str(student.id))
@@ -671,6 +681,65 @@ class ImportExportService:
                 student.admission_date = adm_date
         if get_str("admission_type"):
             student.admission_type = get_str("admission_type")
+
+    async def _apply_fees(
+        self,
+        tenant_id: str,
+        student: Student,
+        row: Dict[str, str],
+        row_num: int,
+        results: Dict[str, Any],
+        fee_structures: List[FeeStructure]
+    ) -> int:
+        """Apply fees from both fee structure and manual columns. Returns count of created fees."""
+        created_count = 0
+        
+        # 1. Apply Fee Structure if provided
+        structure_name = row.get("fee_structure", "").strip()
+        if structure_name:
+            # Find matching structure (case-insensitive)
+            structure = next((s for s in fee_structures if s.name.lower() == structure_name.lower()), None)
+            
+            if structure:
+                # Apply all components from structure
+                import json
+                try:
+                    components = structure.fee_components
+                    if isinstance(components, str):
+                        components = json.loads(components)
+                    
+                    # Determine academic year
+                    academic_year = row.get("academic_year", "").strip() or structure.academic_year or "2025-2026"
+                    
+                    for comp in components:
+                        # Construct a virtual row for _create_fee_for_student
+                        comp_row = {
+                            "fee_type": comp.get("type", "other"),
+                            "fee_amount": str(comp.get("amount", 0)),
+                            "academic_year": academic_year,
+                            "fee_due_date": row.get("fee_due_date", ""), # Use row's due date if provided
+                        }
+                        # Create fee using existing helper
+                        if await self._create_fee_for_student(tenant_id, student, comp_row, row_num, results, is_structure_component=True):
+                            created_count += 1
+                            
+                except Exception as e:
+                    results["errors"].append({
+                        "row": row_num,
+                        "error": f"Error applying fee structure '{structure_name}': {str(e)}"
+                    })
+            else:
+                results["errors"].append({
+                    "row": row_num,
+                    "error": f"Fee structure '{structure_name}' not found"
+                })
+
+        # 2. Apply Manual Fee if provided (fee_type + fee_amount)
+        if row.get("fee_type") and row.get("fee_amount"):
+            if await self._create_fee_for_student(tenant_id, student, row, row_num, results):
+                created_count += 1
+                
+        return created_count
     
     async def _create_fee_for_student(
         self, 
@@ -678,7 +747,8 @@ class ImportExportService:
         student: Student, 
         row: Dict[str, str], 
         row_num: int,
-        results: Dict[str, Any]
+        results: Dict[str, Any],
+        is_structure_component: bool = False
     ) -> bool:
         """Create a FeePayment record for a student if fee details are provided."""
         fee_type_str = row.get("fee_type", "").strip().lower()

@@ -22,5 +22,9 @@ RUN mkdir -p /app/storage
 EXPOSE 8000
 
 # Run the application
-# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-CMD sh -c "if [ \"$RUN_SEED\" = \"true\" ]; then python -m scripts.seed; fi && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+# Copy startup script
+COPY start.sh .
+RUN chmod +x start.sh
+
+# Run the startup script
+CMD ["./start.sh"]

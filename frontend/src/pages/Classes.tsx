@@ -182,23 +182,23 @@ const ClassesPage: React.FC = () => {
             <Box>
                 <Button
                     variant="outlined"
-                    startIcon={<FileDownloadIcon />}
-                    onClick={handleExport}
-                    sx={{ mr: 2, mb: 4 }}
-                >
-                    Export
-                </Button>
-                <Button
-                    variant="outlined"
                     startIcon={<CloudUploadIcon />}
                     onClick={() => {
                         setImportDialog(true);
                         setImportResult(null);
                         setImportFile(null);
                     }}
-                    sx={{ mr: 2, mb: 4 }}
+                    sx={{ mr: 2, mb: 4, borderRadius: 3 }}
                 >
                     Import
+                </Button>
+                <Button
+                    variant="outlined"
+                    startIcon={<FileDownloadIcon />}
+                    onClick={handleExport}
+                    sx={{ mr: 2, mb: 4, borderRadius: 3 }}
+                >
+                    Export
                 </Button>
                 <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} sx={{ mb: 4 }}>
                     Add Class

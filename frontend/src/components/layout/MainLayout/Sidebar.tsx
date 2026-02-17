@@ -32,7 +32,7 @@ import {
     Quiz as ExamIcon,
     CreditCard as OnlinePaymentsIcon,
 
-    Storefront as MarketplaceIcon,
+
     Class as ClassIcon, // Added
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
@@ -101,7 +101,7 @@ const navSections: NavSection[] = [
     {
         title: 'Services',
         items: [
-            { label: 'L&D Hub', path: '/marketplace', icon: <MarketplaceIcon />, badge: 'Pro', badgeColor: 'info', moduleKey: 'marketplace' },
+            { label: 'L&D Hub', path: '/learning', icon: <SchoolIcon />, badge: 'New', badgeColor: 'success', moduleKey: 'learning' },
         ],
     },
     {

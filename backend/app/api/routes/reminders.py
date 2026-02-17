@@ -9,13 +9,13 @@ from app.models.user import User
 from app.core.services.reminder_service import ReminderService
 from app.schemas.reminder import (
     ReminderSettingsResponse, ReminderSettingsUpdate,
-    ReminderTemplateResponse,
+    ReminderTemplateResponse, ReminderTemplateCreate, ReminderTemplateUpdate,
     ReminderLogResponse,
     ManualReminderRequest,
     ReceiptRequest,
     BulkReminderRequest
 )
-from app.models.reminder import NotificationChannel
+from app.models.reminder import NotificationChannel, ReminderTemplate
 
 router = APIRouter(prefix="/reminders", tags=["Reminders"])
 
@@ -47,6 +47,81 @@ async def get_templates(
     service = ReminderService(db)
     return await service.get_templates(current_user.tenant_id)
 
+@router.post("/templates", response_model=ReminderTemplateResponse, status_code=status.HTTP_201_CREATED)
+async def create_template(
+    template_data: ReminderTemplateCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new reminder template"""
+    from sqlalchemy import select
+    template = ReminderTemplate(
+        tenant_id=current_user.tenant_id,
+        name=template_data.name,
+        type=template_data.type,
+        trigger_type=template_data.trigger_type,
+        subject=template_data.subject,
+        body=template_data.body,
+        is_active=template_data.is_active,
+        is_default=template_data.is_default,
+    )
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+@router.put("/templates/{template_id}", response_model=ReminderTemplateResponse)
+async def update_template(
+    template_id: UUID,
+    template_data: ReminderTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a reminder template"""
+    from sqlalchemy import select
+    result = await db.execute(
+        select(ReminderTemplate).where(
+            ReminderTemplate.id == template_id,
+            ReminderTemplate.tenant_id == current_user.tenant_id,
+            ReminderTemplate.deleted_at.is_(None)
+        )
+    )
+    template = result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    update_data = template_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(template, field, value)
+    
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(
+    template_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Soft-delete a reminder template"""
+    from sqlalchemy import select
+    from datetime import datetime
+    result = await db.execute(
+        select(ReminderTemplate).where(
+            ReminderTemplate.id == template_id,
+            ReminderTemplate.tenant_id == current_user.tenant_id,
+            ReminderTemplate.deleted_at.is_(None)
+        )
+    )
+    template = result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    template.deleted_at = datetime.utcnow()
+    await db.commit()
+    return None
+
 @router.post("/send", response_model=List[ReminderLogResponse])
 async def send_reminders(
     request: ManualReminderRequest,
@@ -54,68 +129,56 @@ async def send_reminders(
     current_user: User = Depends(get_current_user)
 ):
     """Send manual fee reminders to selected students"""
+    from app.models.fee import FeePayment, PaymentStatus
+    from app.models.student import Student
+    from sqlalchemy import select
+    
     service = ReminderService(db)
     all_logs = []
     
-    # If fee_payment_ids provided, send for specific payments
-    # Otherwise logic would need to find pending fees for students
-    # For now, we assume fee_payment_ids is provided or we iterate students and find pending?
-    # Based on schema prompt, let's keep it simple: manual send requires fee_payment_ids usually 
-    # OR we implement "find pending" here.
-    
     if request.fee_payment_ids:
+        # Send for specific payment IDs — derive student from each payment
         for payment_id in request.fee_payment_ids:
-            # We need to find the student for this payment to verify access/logic
-            # But create_manual_reminder accepts student_id too.
-            # Simplified: Iterate through payments and send.
-            
-            # Optimization: Fetch payment to get student_id
-            # But wait, send_manual_reminder takes student_id.
-            # Let's trust the service or fetch internally.
-            
-            # Actually service.send_manual_reminder expects student_id.
-            # We should probably restructure `send_manual_reminder` to just take payment_id and fetching student?
-            # Yes, `send_manual_reminder` does fetch student and payment.
-            # BUT it takes student_id as arg. It should probably just take payment_id.
-            # HACK: For now, I'll update service to be smarter or just pass student_id if I can.
-            
-            # Let me update logic here to handle list of payments.
-            # Since request has list of students and list of payments... 
-            # It implies sending for these payments for these students.
-            
-            # Let's iterate payments. 
-            # I'll modify service call.
-            
-            # Logic: 
-            # 1. Fetch payment to know student.
-            # 2. Call send_manual_reminder.
-            
-            logs = await service.send_manual_reminder(
-                tenant_id=current_user.tenant_id,
-                student_id=request.student_ids[0], # WARNING: This assumes mapped correctly. 
-                # Ideally manual reminder is: "Remind Student X for Payment Y".
-                # If bulk, likely "Remind all these students for their pending fees".
-                # For v1, let's assume UI sends one student at a time or specific payments.
-                # Let's fix this properly.
-                
-                # If fee_payment_ids is present, we ignore student_ids list effectively or use it to filter?
-                # A better API design: List of {student_id, payment_id}. 
-                # But typically "Bulk Remind" means "For all these checked rows".
-                # Rows are payments. So payment_ids is enough.
-                
-                fee_payment_id=payment_id,
-                channels=request.channels,
-                template_id=request.template_id,
-                custom_message=request.custom_message
-            )
-            all_logs.extend(logs)
+            try:
+                logs = await service.send_manual_reminder(
+                    tenant_id=current_user.tenant_id,
+                    fee_payment_id=payment_id,
+                    channels=request.channels,
+                    template_id=request.template_id,
+                    custom_message=request.custom_message
+                )
+                all_logs.extend(logs)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to send reminder for payment {payment_id}: {e}")
+                continue
             
     elif request.student_ids:
-        # Find all pending payments for these students and remind
-        # This requires `service.find_pending_payments(student_id)`
-        # I haven't implemented that yet. 
-        # For now, return error or empty.
-        pass
+        # Find all pending/overdue payments for these students and remind
+        for sid in request.student_ids:
+            result = await db.execute(
+                select(FeePayment).where(
+                    FeePayment.student_id == sid,
+                    FeePayment.tenant_id == current_user.tenant_id,
+                    FeePayment.status.in_([PaymentStatus.PENDING, PaymentStatus.PARTIAL, PaymentStatus.OVERDUE])
+                )
+            )
+            payments = result.scalars().all()
+            for payment in payments:
+                try:
+                    logs = await service.send_manual_reminder(
+                        tenant_id=current_user.tenant_id,
+                        fee_payment_id=payment.id,
+                        student_id=sid,
+                        channels=request.channels,
+                        template_id=request.template_id,
+                        custom_message=request.custom_message
+                    )
+                    all_logs.extend(logs)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Failed to send reminder for student {sid}: {e}")
+                    continue
 
     return all_logs
 

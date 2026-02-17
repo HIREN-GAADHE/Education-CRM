@@ -574,23 +574,35 @@ async def create_bulk_fees(
 ):
     """Generate fee records for all students in a class."""
     try:
-        # Get students in class
+        # Get students in class — include both 'active' and 'enrolled' statuses
         students_result = await db.execute(
             select(Student).where(
                 Student.class_id == bulk_data.class_id,
                 Student.tenant_id == current_user.tenant_id,
-                Student.status == 'active'  # Only active students
+                Student.status.in_(['active', 'enrolled'])
             )
         )
         students = students_result.scalars().all()
         
         if not students:
-            raise HTTPException(status_code=404, detail="No active students found in this class")
+            raise HTTPException(status_code=404, detail="No active/enrolled students found in this class")
             
         created_count = 0
+        skipped_count = 0
         for student in students:
-            # Check if fee already exists for this type/year to avoid duplicates?
-            # For now, we allow multiples (e.g. monthly tuition), but maybe check description?
+            # Check for duplicates: same student + fee_type + academic_year + description
+            existing_result = await db.execute(
+                select(FeePayment.id).where(
+                    FeePayment.student_id == student.id,
+                    FeePayment.fee_type == bulk_data.fee_type,
+                    FeePayment.academic_year == bulk_data.academic_year,
+                    FeePayment.description == bulk_data.description,
+                    FeePayment.tenant_id == current_user.tenant_id,
+                )
+            )
+            if existing_result.scalar_one_or_none():
+                skipped_count += 1
+                continue
             
             payment = FeePayment(
                 student_id=student.id,
@@ -600,22 +612,22 @@ async def create_bulk_fees(
                 total_amount=bulk_data.amount,
                 notes=bulk_data.notes,
                 tenant_id=current_user.tenant_id,
-                transaction_id=generate_transaction_id(), # This might be too fast, ensure uniqueness
+                transaction_id=generate_transaction_id(),
                 status=PaymentStatus.PENDING,
                 paid_amount=0,
                 discount_amount=0,
                 fine_amount=0,
                 due_date=datetime.strptime(bulk_data.due_date, "%Y-%m-%d").date() if bulk_data.due_date else None
             )
-            # Add small delay or salt? generate_transaction_id uses uuid4 so it should be fine.
-            # But the time part might overlap. adding a counter or ensuring uuid uniqueness.
-            # uuid4 is random, so collision is unlikely.
             
             db.add(payment)
             created_count += 1
             
         await db.commit()
-        return {"message": f"Successfully generated fees for {created_count} students", "count": created_count}
+        msg = f"Successfully generated fees for {created_count} students"
+        if skipped_count > 0:
+            msg += f" ({skipped_count} skipped — already existed)"
+        return {"message": msg, "count": created_count}
         
     except HTTPException:
         raise

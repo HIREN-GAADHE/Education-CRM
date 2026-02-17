@@ -1,0 +1,1 @@
+SUCCESS: All SMTP columns present!

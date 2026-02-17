@@ -220,7 +220,6 @@ const StaffPage: React.FC = () => {
                         startIcon={<CloudUploadIcon />}
                         onClick={() => setImportDialog(true)}
                         variant="outlined"
-                        color="primary"
                         sx={{ borderRadius: 3 }}
                     >
                         Import
@@ -229,7 +228,6 @@ const StaffPage: React.FC = () => {
                         startIcon={<FileDownloadIcon />}
                         onClick={handleExport}
                         variant="outlined"
-                        color="secondary"
                         sx={{ borderRadius: 3 }}
                     >
                         Export

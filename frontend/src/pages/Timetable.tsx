@@ -841,16 +841,22 @@ const TimetablePage: React.FC = () => {
                     Timetable Management
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                    <Tooltip title="Import Timetable">
-                        <IconButton onClick={() => setImportDialog(true)} color="primary">
-                            <CloudUploadIcon />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Export Timetable">
-                        <IconButton onClick={handleExport} color="secondary">
-                            <FileDownloadIcon />
-                        </IconButton>
-                    </Tooltip>
+                    <Button
+                        variant="outlined"
+                        startIcon={<CloudUploadIcon />}
+                        onClick={() => setImportDialog(true)}
+                        sx={{ borderRadius: 3 }}
+                    >
+                        Import
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<FileDownloadIcon />}
+                        onClick={handleExport}
+                        sx={{ borderRadius: 3 }}
+                    >
+                        Export
+                    </Button>
                     <Tooltip title="Clear All Periods">
                         <span>
                             <IconButton onClick={handleClearTimetable} color="error" disabled={!timeSlotsData?.items?.length}>

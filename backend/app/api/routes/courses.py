@@ -85,12 +85,14 @@ class CourseResponse(BaseModel):
         from_attributes = True
 
 
+
 class CourseListResponse(BaseModel):
     items: List[CourseResponse]
     total: int
     page: int
     page_size: int
     total_pages: int
+
 
 
 @router.get("", response_model=CourseListResponse)

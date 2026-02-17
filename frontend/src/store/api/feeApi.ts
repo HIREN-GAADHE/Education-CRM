@@ -79,6 +79,39 @@ export interface FeeSummary {
     payment_count: number;
 }
 
+export interface FeeComponent {
+    name: string;
+    type: string;
+    amount: number;
+    optional: boolean;
+}
+
+export interface FeeStructure {
+    id: string;
+    tenant_id: string;
+    name: string;
+    description?: string;
+    course?: string;
+    department?: string;
+    batch?: string;
+    academic_year?: string;
+    fee_components: FeeComponent[];
+    total_amount: number;
+    is_active: boolean;
+}
+
+export interface FeeStructureCreate {
+    name: string;
+    description?: string;
+    course?: string;
+    department?: string;
+    batch?: string;
+    academic_year?: string;
+    fee_components?: FeeComponent[];
+    total_amount: number;
+    is_active?: boolean;
+}
+
 // Inject endpoints into the centralized apiSlice
 export const feeApi = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
@@ -157,6 +190,37 @@ export const feeApi = apiSlice.injectEndpoints({
             }),
             invalidatesTags: ['Fees', 'Student'],
         }),
+        // Fee Structure endpoints
+        getFeeStructures: builder.query<FeeStructure[], { active_only?: boolean }>({
+            query: (params) => ({
+                url: '/fee-structures',
+                params: { active_only: params?.active_only ?? true },
+            }),
+            providesTags: ['FeeStructures'],
+        }),
+        createFeeStructure: builder.mutation<FeeStructure, FeeStructureCreate>({
+            query: (body) => ({
+                url: '/fee-structures',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['FeeStructures'],
+        }),
+        updateFeeStructure: builder.mutation<FeeStructure, { id: string; data: Partial<FeeStructureCreate> }>({
+            query: ({ id, data }) => ({
+                url: `/fee-structures/${id}`,
+                method: 'PUT',
+                body: data,
+            }),
+            invalidatesTags: ['FeeStructures'],
+        }),
+        deleteFeeStructure: builder.mutation<void, string>({
+            query: (id) => ({
+                url: `/fee-structures/${id}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['FeeStructures'],
+        }),
     }),
 });
 
@@ -169,4 +233,9 @@ export const {
     useMakePaymentMutation,
     useDeleteFeePaymentMutation,
     useBulkCreateFeesMutation,
+    useGetFeeStructuresQuery,
+    useCreateFeeStructureMutation,
+    useUpdateFeeStructureMutation,
+    useDeleteFeeStructureMutation,
 } = feeApi;
+

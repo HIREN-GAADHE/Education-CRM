@@ -465,9 +465,9 @@ async def get_student_profile(
             "admission_date": student.admission_date.isoformat() if student.admission_date else None,
             "admission_type": student.admission_type,
             "current_status": student.status.value if student.status else "active",
-            "days_enrolled": max(0, days_enrolled),
-            "months_enrolled": max(0, months_enrolled),
-            "years_enrolled": max(0, years_enrolled),
+            "days_enrolled": days_enrolled if student.admission_date else None, # Return None if not set
+            "months_enrolled": months_enrolled if student.admission_date else None,
+            "years_enrolled": years_enrolled if student.admission_date else None,
             "batch": student.batch,
             "expected_graduation": expected_graduation,
             "current_semester": current_semester,
@@ -499,6 +499,8 @@ async def get_student_profile(
         
         total_attendance = att_row.total or 0
         present_count = att_row.present or 0
+        # If total_attendance is 0, we can return 0 or None for percentage. 
+        # Typically 0% is fine, but distinct 'N/A' might be better. Keeping 0 for now but ensuring robust math.
         attendance_percentage = round((present_count / total_attendance * 100), 2) if total_attendance > 0 else 0
         
         attendance_summary = {
@@ -590,11 +592,17 @@ async def get_student_profile(
                 "status": payment.status.value if payment.status else "pending"
             })
         
+        # Calculate payment percentage
+        # usage: None indicates 'No Fees Assigned' to distinguish from '0% Paid'
+        payment_percentage = None
+        if total_fees > 0:
+            payment_percentage = round((paid_amount / total_fees * 100), 2)
+        
         fee_summary = {
             "total_fees": total_fees,
             "paid": paid_amount,
             "pending": total_fees - paid_amount,
-            "payment_percentage": round((paid_amount / total_fees * 100), 2) if total_fees > 0 else 100,
+            "payment_percentage": payment_percentage, 
             "recent_payments": recent_payments
         }
         

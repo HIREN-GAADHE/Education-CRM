@@ -324,8 +324,8 @@ const StudentDetailsPage: React.FC = () => {
                                 <Grid item xs={12} sm={6} md={3}>
                                     <StatCard
                                         title="Fee Status"
-                                        value={`${profile.fee_summary.payment_percentage}%`}
-                                        subtitle={`₹${profile.fee_summary.pending.toLocaleString()} pending`}
+                                        value={profile.fee_summary.payment_percentage !== null ? `${profile.fee_summary.payment_percentage}%` : 'N/A'}
+                                        subtitle={profile.fee_summary.total_fees > 0 ? `₹${profile.fee_summary.pending.toLocaleString()} pending` : 'No fees assigned'}
                                         color={profile.fee_summary.pending > 0 ? '#ff9800' : '#4caf50'}
                                         icon={<FeeIcon />}
                                     />
@@ -333,7 +333,7 @@ const StudentDetailsPage: React.FC = () => {
                                 <Grid item xs={12} sm={6} md={3}>
                                     <StatCard
                                         title="Days Enrolled"
-                                        value={profile.enrollment_journey.days_enrolled}
+                                        value={profile.enrollment_journey.days_enrolled ?? '-'}
                                         subtitle={profile.enrollment_journey.batch || 'N/A'}
                                         color="#9c27b0"
                                         icon={<CalendarIcon />}
@@ -385,11 +385,17 @@ const StudentDetailsPage: React.FC = () => {
                                             <List dense>
                                                 <ListItem>
                                                     <ListItemIcon><EmailIcon /></ListItemIcon>
-                                                    <ListItemText primary={profile.student.email || '-'} secondary="Email" />
+                                                    <ListItemText
+                                                        primary={profile.student.email || profile.student.parent_email || '-'}
+                                                        secondary={profile.student.email ? "Email" : "Parent Email"}
+                                                    />
                                                 </ListItem>
                                                 <ListItem>
                                                     <ListItemIcon><PhoneIcon /></ListItemIcon>
-                                                    <ListItemText primary={profile.student.phone || '-'} secondary="Phone" />
+                                                    <ListItemText
+                                                        primary={profile.student.phone || profile.student.father_phone || profile.student.mother_phone || '-'}
+                                                        secondary={profile.student.phone ? "Phone" : "Parent Phone"}
+                                                    />
                                                 </ListItem>
                                                 <ListItem>
                                                     <ListItemIcon><HomeIcon /></ListItemIcon>
@@ -605,7 +611,7 @@ const StudentDetailsPage: React.FC = () => {
                                         <CardContent>
                                             <Grid container spacing={2} sx={{ textAlign: 'center', color: 'white' }}>
                                                 <Grid item xs={3}>
-                                                    <Typography variant="h4" fontWeight="bold">{profile.enrollment_journey?.days_enrolled ?? 0}</Typography>
+                                                    <Typography variant="h4" fontWeight="bold">{profile.enrollment_journey?.days_enrolled ?? '-'}</Typography>
                                                     <Typography variant="body2" sx={{ opacity: 0.8 }}>Days Enrolled</Typography>
                                                 </Grid>
                                                 <Grid item xs={3}>
@@ -797,13 +803,13 @@ const StudentDetailsPage: React.FC = () => {
                                             <Box sx={{ mb: 3 }}>
                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                                                     <Typography>Payment Progress</Typography>
-                                                    <Typography fontWeight="bold">{profile.fee_summary.payment_percentage}%</Typography>
+                                                    <Typography fontWeight="bold">{profile.fee_summary.payment_percentage !== null ? `${profile.fee_summary.payment_percentage}%` : 'N/A'}</Typography>
                                                 </Box>
                                                 <LinearProgress
                                                     variant="determinate"
-                                                    value={profile.fee_summary.payment_percentage}
+                                                    value={profile.fee_summary.payment_percentage ?? 0}
                                                     sx={{ height: 10, borderRadius: 5 }}
-                                                    color={profile.fee_summary.payment_percentage >= 100 ? 'success' : 'warning'}
+                                                    color={profile.fee_summary.payment_percentage === 100 ? 'success' : 'warning'}
                                                 />
                                             </Box>
                                             <Divider sx={{ my: 2 }} />

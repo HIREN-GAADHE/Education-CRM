@@ -13,7 +13,7 @@ export interface Course {
     max_students?: number;
     enrolled_count?: number;
     fee_amount?: number;
-    status: string;
+    status: 'active' | 'inactive' | 'upcoming' | 'completed' | 'archived';
     progress?: number;
     instructor_name?: string;
     start_date?: string;

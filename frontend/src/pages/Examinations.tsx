@@ -510,7 +510,12 @@ const ExaminationsPage: React.FC = () => {
                                 ))}
                             </Select>
                         </FormControl>
-                        <Button variant="outlined" startIcon={<DownloadIcon />} disabled={!selectedExamId}>
+                        <Button
+                            variant="outlined"
+                            startIcon={<DownloadIcon />}
+                            disabled={!selectedExamId}
+                            sx={{ borderRadius: 3 }}
+                        >
                             Export Results
                         </Button>
                     </Box>

@@ -21,7 +21,8 @@ import {
     RestartAlt as ResetIcon,
     PhotoCamera as CameraIcon,
     Download as DownloadIcon,
-    Storage as StorageIcon
+    Storage as StorageIcon,
+    Mail as MailIcon
 } from '@mui/icons-material';
 import {
     useGetSettingsQuery,
@@ -103,6 +104,15 @@ const SettingsPage: React.FC = () => {
                     institution_email: settings.institution.institution_email,
                     institution_website: settings.institution.institution_website,
                 },
+                smtp: {
+                    smtp_host: settings.smtp?.smtp_host,
+                    smtp_port: settings.smtp?.smtp_port,
+                    smtp_username: settings.smtp?.smtp_username,
+                    smtp_password: settings.smtp?.smtp_password,
+                    smtp_from_email: settings.smtp?.smtp_from_email,
+                    smtp_from_name: settings.smtp?.smtp_from_name,
+                    smtp_security: settings.smtp?.smtp_security,
+                }
             });
         }
     }, [settings]);
@@ -281,6 +291,7 @@ const SettingsPage: React.FC = () => {
         { label: 'Institution', icon: <BusinessIcon /> },
         { label: 'Appearance', icon: <PaletteIcon /> },
         { label: 'Notifications', icon: <NotificationsIcon /> },
+        { label: 'Email Configuration', icon: <MailIcon /> },
         { label: 'Security', icon: <SecurityIcon /> },
         { label: 'System', icon: <SettingsIcon /> },
         { label: 'Data & Backup', icon: <CloudDownloadIcon /> },
@@ -577,8 +588,103 @@ const SettingsPage: React.FC = () => {
                     </Grid>
                 </TabPanel>
 
-                {/* Security Tab */}
+                {/* Email Configuration Tab */}
                 <TabPanel value={tabValue} index={3}>
+                    <Typography variant="h6" fontWeight="bold" gutterBottom>
+                        Email Configuration (SMTP)
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        Configure your SMTP server settings for sending system emails.
+                    </Typography>
+                    <Divider sx={{ mb: 3 }} />
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={8}>
+                            <Alert severity="warning" sx={{ mb: 3 }}>
+                                Changes to these settings will affect all system emails sent from your institution.
+                            </Alert>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={8}>
+                                    <TextField
+                                        fullWidth
+                                        label="SMTP Host"
+                                        value={localSettings.smtp?.smtp_host || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_host', e.target.value)}
+                                        placeholder="smtp.gmail.com"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <TextField
+                                        fullWidth
+                                        label="SMTP Port"
+                                        type="number"
+                                        value={localSettings.smtp?.smtp_port || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_port', parseInt(e.target.value))}
+                                        placeholder="587"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Username"
+                                        value={localSettings.smtp?.smtp_username || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_username', e.target.value)}
+                                        placeholder="email@example.com"
+                                        autoComplete="new-password"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Password"
+                                        type="password"
+                                        value={localSettings.smtp?.smtp_password || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_password', e.target.value)}
+                                        placeholder="App Password / Email Password"
+                                        autoComplete="new-password"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="From Email"
+                                        value={localSettings.smtp?.smtp_from_email || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_from_email', e.target.value)}
+                                        placeholder="noreply@school.edu"
+                                        helperText="The email address that will appear as sender"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="From Name"
+                                        value={localSettings.smtp?.smtp_from_name || ''}
+                                        onChange={(e) => handleChange('smtp', 'smtp_from_name', e.target.value)}
+                                        placeholder="School Name"
+                                        helperText="The name that will appear as sender"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Security</InputLabel>
+                                        <Select
+                                            value={localSettings.smtp?.smtp_security ?? 'tls'}
+                                            label="Security"
+                                            onChange={(e) => handleChange('smtp', 'smtp_security', e.target.value)}
+                                        >
+                                            <MenuItem value="tls">TLS (STARTTLS)</MenuItem>
+                                            <MenuItem value="ssl">SSL</MenuItem>
+                                            <MenuItem value="none">None</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </TabPanel>
+
+                {/* Security Tab */}
+                <TabPanel value={tabValue} index={4}>
                     <Typography variant="h6" fontWeight="bold" gutterBottom>
                         Security Settings
                     </Typography>
@@ -659,7 +765,7 @@ const SettingsPage: React.FC = () => {
                 </TabPanel>
 
                 {/* System Tab */}
-                <TabPanel value={tabValue} index={4}>
+                <TabPanel value={tabValue} index={5}>
                     <Typography variant="h6" fontWeight="bold" gutterBottom>
                         System Settings
                     </Typography>
@@ -758,7 +864,7 @@ const SettingsPage: React.FC = () => {
                 </TabPanel>
 
                 {/* Data & Backup Tab */}
-                <TabPanel value={tabValue} index={5}>
+                <TabPanel value={tabValue} index={6}>
                     <Typography variant="h6" fontWeight="bold" gutterBottom>
                         Data & Backup
                     </Typography>

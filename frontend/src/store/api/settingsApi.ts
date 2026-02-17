@@ -42,12 +42,23 @@ export interface InstitutionSettings {
     institution_website: string | null;
 }
 
+export interface SmtpSettings {
+    smtp_host: string | null;
+    smtp_port: number | null;
+    smtp_username: string | null;
+    smtp_password: string | null;
+    smtp_from_email: string | null;
+    smtp_from_name: string | null;
+    smtp_security: string | null;
+}
+
 export interface AllSettings {
     appearance: AppearanceSettings;
     system: SystemSettings;
     notifications: NotificationSettings;
     security: SecuritySettings;
     institution: InstitutionSettings;
+    smtp: SmtpSettings;
 }
 
 export interface SettingsUpdateRequest {
@@ -56,6 +67,7 @@ export interface SettingsUpdateRequest {
     notifications?: Partial<NotificationSettings>;
     security?: Partial<SecuritySettings>;
     institution?: Partial<InstitutionSettings>;
+    smtp?: Partial<SmtpSettings>;
 }
 
 export const settingsApi = apiSlice.injectEndpoints({

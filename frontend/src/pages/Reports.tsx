@@ -771,6 +771,7 @@ const ReportsPage: React.FC = () => {
                                 startIcon={<DownloadIcon />}
                                 onClick={() => handleExport(selectedReport)}
                                 disabled={selectedReport.status !== 'completed'}
+                                sx={{ borderRadius: 3 }}
                             >
                                 Export CSV
                             </Button>

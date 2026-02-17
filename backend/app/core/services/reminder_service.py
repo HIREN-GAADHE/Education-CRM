@@ -16,7 +16,7 @@ from app.models.fee import FeePayment, PaymentStatus
 from app.models.student import Student
 from app.models.parent_student import ParentStudent, RelationshipType
 from app.models.user import User
-from app.models.notification import NotificationType, NotificationPriority
+from app.models.notification import NotificationType, NotificationPriority, NotificationStatus
 from app.core.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -99,11 +99,11 @@ class ReminderService:
         
         # Add student if they have contact info
         if student.email:
-            recipients.append({"type": "student", "email": student.email, "name": student.full_name, "phone": student.phone})
+            recipients.append({"type": "student", "email": student.email, "name": f"{student.first_name} {student.last_name}", "phone": student.phone})
             
         # Add parents
         parent_links_result = await self.db.execute(
-            select(ParentStudent).where(ParentStudent.student_id == student_id)
+            select(ParentStudent).where(ParentStudent.student_id == target_student_id)
         )
         parent_links = parent_links_result.scalars().all()
         
@@ -130,10 +130,27 @@ class ReminderService:
             if template:
                 body = template.body
                 subject = template.subject or subject
-                # TODO: Replace placeholders
+                
+                # Replace placeholders
+                placeholders = {
+                    "{student_name}": f"{student.first_name} {student.last_name}",
+                    "{first_name}": student.first_name or "",
+                    "{last_name}": student.last_name or "",
+                    "{amount}": f"₹{payment.total_amount:,.2f}",
+                    "{total_amount}": f"₹{payment.total_amount:,.2f}",
+                    "{paid_amount}": f"₹{payment.paid_amount:,.2f}",
+                    "{balance}": f"₹{payment.balance_amount:,.2f}",
+                    "{due_date}": str(payment.due_date) if payment.due_date else "N/A",
+                    "{fee_type}": payment.fee_type.value if hasattr(payment.fee_type, 'value') else str(payment.fee_type),
+                    "{transaction_id}": payment.transaction_id or "",
+                    "{academic_year}": payment.academic_year or "",
+                }
+                for placeholder, value in placeholders.items():
+                    body = body.replace(placeholder, value)
+                    subject = subject.replace(placeholder, value)
         
         if not body:
-            body = f"Dear Parent/Student, This is a reminder to pay the fee of amount {payment.amount} for {student.full_name}. Due date: {payment.due_date}."
+            body = f"Dear Parent/Student, This is a reminder to pay the fee of amount ₹{payment.total_amount} for {student.first_name} {student.last_name}. Due date: {payment.due_date}."
 
         # 4. Send notifications via requested channels
         for channel in channels:
@@ -262,9 +279,9 @@ class ReminderService:
             
             # Message
             if trigger_type == ReminderTriggerType.BEFORE_DUE:
-                message = f"Reminder: Fee of {payment.amount} is due in {days_diff} days on {payment.due_date}."
+                message = f"Reminder: Fee of ₹{payment.total_amount} is due in {days_diff} days on {payment.due_date}."
             else:
-                message = f"Urgent: Fee of {payment.amount} was due {days_diff} days ago on {payment.due_date}. Please pay immediately."
+                message = f"Urgent: Fee of ₹{payment.total_amount} was due {days_diff} days ago on {payment.due_date}. Please pay immediately."
             
             # Send (reuse manual logic or similar)
             # We default to EMAIL if enabled, SMS if enabled
@@ -294,7 +311,7 @@ class ReminderService:
         )
         payment = payment_result.scalar_one_or_none()
         
-        if not payment or payment.status not in [PaymentStatus.PAID, PaymentStatus.PARTIAL]:
+        if not payment or payment.status not in [PaymentStatus.COMPLETED, PaymentStatus.PARTIAL]:
             raise ValueError("Payment not found or not paid")
             
         student_result = await self.db.execute(
@@ -305,7 +322,7 @@ class ReminderService:
         # Link to download receipt (placeholder for now)
         receipt_link = f"/api/v1/fees/{payment.id}/receipt" 
         
-        message = f"Payment Successful. Receipt for {student.full_name}, Amount: {payment.amount_paid}. Download: {receipt_link}"
+        message = f"Payment Successful. Receipt for {student.first_name} {student.last_name}, Amount: ₹{payment.paid_amount}. Download: {receipt_link}"
         
         # Send
         # Reusing send_manual_reminder logic but simplified or separate?

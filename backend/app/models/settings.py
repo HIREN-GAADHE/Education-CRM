@@ -34,6 +34,15 @@ class TenantSettings(TenantBaseModel):
     sms_alerts = Column(Boolean, default=False)
     weekly_digest = Column(Boolean, default=True)
     
+    # SMTP Settings (Tenant Specific)
+    smtp_host = Column(String(255), nullable=True)
+    smtp_port = Column(Integer, nullable=True)
+    smtp_username = Column(String(255), nullable=True)
+    smtp_password = Column(String(255), nullable=True)
+    smtp_from_email = Column(String(255), nullable=True)
+    smtp_from_name = Column(String(255), nullable=True)
+    smtp_security = Column(String(10), default="tls")  # tls, ssl, none
+    
     # Security Settings
     two_factor_enabled = Column(Boolean, default=False)
     session_timeout_minutes = Column(Integer, default=30)

@@ -23,6 +23,7 @@ import {
     useUpdateFeePaymentMutation,
     useDeleteFeePaymentMutation,
     useBulkCreateFeesMutation,
+    useGetFeeStructuresQuery,
 } from '@/store/api/feeApi';
 import type { FeePayment } from '@/store/api/feeApi';
 import { useGetStudentsQuery } from '@/store/api/studentApi';
@@ -31,6 +32,7 @@ import { toast } from 'react-toastify';
 import { PaymentCheckout } from '@/components/payment';
 import { ReminderDialog } from '@/components/fees/ReminderDialog';
 import ReminderSettingsDialog from '@/components/fees/ReminderSettingsDialog';
+import FeeStructureDialog from '@/components/fees/FeeStructureDialog';
 import { useSendReceiptMutation, useBulkSendRemindersMutation, useSendRemindersMutation } from '@/store/api/remindersApi';
 import {
     Notifications as NotificationsIcon,
@@ -46,6 +48,7 @@ const FeesPage: React.FC = () => {
     const [openStatusDialog, setOpenStatusDialog] = useState(false);
     const [openOnlinePayment, setOpenOnlinePayment] = useState(false);
     const [openSettingsDialog, setOpenSettingsDialog] = useState(false);
+    const [openStructuresDialog, setOpenStructuresDialog] = useState(false);
 
     // Selection & Filters
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
@@ -97,8 +100,9 @@ const FeesPage: React.FC = () => {
         academic_year: filters.academicYear || undefined
     });
     const { data: summary, refetch: refetchSummary } = useGetFeeSummaryQuery({});
-    const { data: students } = useGetStudentsQuery({ page: 1, pageSize: 1000 }); // Increased limit
+    const { data: students } = useGetStudentsQuery({ page: 1, pageSize: 300 });
     const { data: classes } = useGetClassesQuery();
+    const { data: feeStructures } = useGetFeeStructuresQuery({ active_only: true });
 
     const [createFeePayment, { isLoading: isCreating }] = useCreateFeePaymentMutation();
     const [makePayment, { isLoading: isPaying }] = useMakePaymentMutation();
@@ -108,6 +112,7 @@ const FeesPage: React.FC = () => {
 
     // Bulk Create State
     const [openBulkCreateDialog, setOpenBulkCreateDialog] = useState(false);
+    const [selectedStructureId, setSelectedStructureId] = useState('');
     const [bulkCreateForm, setBulkCreateForm] = useState({
         class_id: '',
         fee_type: 'tuition',
@@ -120,6 +125,7 @@ const FeesPage: React.FC = () => {
     const [bulkCreateFees, { isLoading: isBulkCreating }] = useBulkCreateFeesMutation();
 
     const handleOpenBulkCreate = () => {
+        setSelectedStructureId('');
         setBulkCreateForm({
             class_id: '',
             fee_type: 'tuition',
@@ -130,6 +136,27 @@ const FeesPage: React.FC = () => {
             notes: ''
         });
         setOpenBulkCreateDialog(true);
+    };
+
+    const handleStructureSelect = (structureId: string) => {
+        setSelectedStructureId(structureId);
+        const selected = feeStructures?.find(s => s.id === structureId);
+        if (selected) {
+            setBulkCreateForm(prev => ({
+                ...prev,
+                fee_type: selected.fee_components?.[0]?.type || 'tuition',
+                amount: selected.total_amount,
+                description: selected.name + (selected.description ? ` - ${selected.description}` : ''),
+                academic_year: selected.academic_year || prev.academic_year,
+            }));
+        } else {
+            setBulkCreateForm(prev => ({
+                ...prev,
+                fee_type: 'tuition',
+                amount: 0,
+                description: '',
+            }));
+        }
     };
 
     const handleBulkCreateSubmit = async () => {
@@ -369,6 +396,13 @@ const FeesPage: React.FC = () => {
                 <Box>
                     <Button
                         variant="outlined"
+                        onClick={() => setOpenStructuresDialog(true)}
+                        sx={{ mr: 2 }}
+                    >
+                        Fee Structures
+                    </Button>
+                    <Button
+                        variant="outlined"
                         onClick={handleOpenBulkCreate}
                         disabled={isBulkCreating}
                         sx={{ mr: 2 }}
@@ -435,7 +469,6 @@ const FeesPage: React.FC = () => {
                             label="Academic Year"
                             value={filters.academicYear}
                             onChange={(e) => setFilters(prev => ({ ...prev, academicYear: e.target.value }))}
-                            helperText="Leave empty for all years"
                         />
                     </Grid>
                     <Grid item xs={12} md={3} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
@@ -930,17 +963,64 @@ const FeesPage: React.FC = () => {
                 onClose={() => setOpenSettingsDialog(false)}
             />
 
-            {/* Bulk Create Dialog */}
+            <FeeStructureDialog
+                open={openStructuresDialog}
+                onClose={() => setOpenStructuresDialog(false)}
+            />
+
+            {/* Bulk Create Dialog — Supports Fee Structure or Manual Entry */}
             <Dialog open={openBulkCreateDialog} onClose={() => setOpenBulkCreateDialog(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>Bulk Generate Fees for Class</DialogTitle>
                 <DialogContent>
-                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                    <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                        {/* Fee Structure Selection (if any exist) */}
+                        {feeStructures && feeStructures.length > 0 && (
+                            <Grid item xs={12}>
+                                <FormControl fullWidth size="small">
+                                    <InputLabel>Fee Structure (auto-fills fields)</InputLabel>
+                                    <Select
+                                        value={selectedStructureId}
+                                        label="Fee Structure (auto-fills fields)"
+                                        onChange={(e) => handleStructureSelect(e.target.value)}
+                                    >
+                                        <MenuItem value=""><em>— Manual Entry —</em></MenuItem>
+                                        {feeStructures.map((s) => (
+                                            <MenuItem key={s.id} value={s.id}>
+                                                {s.name} — ₹{s.total_amount.toLocaleString()}
+                                                {s.course ? ` (${s.course})` : ''}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        )}
+
+                        {/* Show structure breakdown when selected */}
+                        {selectedStructureId && feeStructures?.find(s => s.id === selectedStructureId)?.fee_components?.length ? (
+                            <Grid item xs={12}>
+                                <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, p: 1.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>FEE BREAKDOWN</Typography>
+                                    {feeStructures?.find(s => s.id === selectedStructureId)?.fee_components?.map((c, i) => (
+                                        <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                            <Typography variant="body2">{c.name}</Typography>
+                                            <Typography variant="body2" fontWeight={600}>₹{c.amount.toLocaleString()}</Typography>
+                                        </Box>
+                                    ))}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                                        <Typography variant="body2" fontWeight={700}>Total</Typography>
+                                        <Typography variant="body2" fontWeight={700}>₹{bulkCreateForm.amount.toLocaleString()}</Typography>
+                                    </Box>
+                                </Box>
+                            </Grid>
+                        ) : null}
+
+                        {/* Class Selection — always required */}
                         <Grid item xs={12}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel>Class</InputLabel>
+                            <FormControl fullWidth size="small" required>
+                                <InputLabel>Class *</InputLabel>
                                 <Select
                                     value={bulkCreateForm.class_id}
-                                    label="Class"
+                                    label="Class *"
                                     onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, class_id: e.target.value })}
                                 >
                                     {classes?.map((cls) => (
@@ -951,6 +1031,8 @@ const FeesPage: React.FC = () => {
                                 </Select>
                             </FormControl>
                         </Grid>
+
+                        {/* Fee details — editable in manual mode, read-only when structure selected */}
                         <Grid item xs={12} md={6}>
                             <FormControl fullWidth size="small">
                                 <InputLabel>Fee Type</InputLabel>
@@ -958,6 +1040,7 @@ const FeesPage: React.FC = () => {
                                     value={bulkCreateForm.fee_type}
                                     label="Fee Type"
                                     onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, fee_type: e.target.value })}
+                                    disabled={!!selectedStructureId}
                                 >
                                     {feeTypes.map((type) => (
                                         <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>
@@ -969,10 +1052,16 @@ const FeesPage: React.FC = () => {
                             <TextField
                                 fullWidth
                                 size="small"
-                                label="Amount"
+                                label="Amount *"
                                 type="number"
-                                value={bulkCreateForm.amount}
-                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, amount: parseFloat(e.target.value) })}
+                                required
+                                value={bulkCreateForm.amount || ''}
+                                onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, amount: parseFloat(e.target.value) || 0 })}
+                                InputProps={{
+                                    readOnly: !!selectedStructureId,
+                                    sx: selectedStructureId ? { bgcolor: 'action.hover' } : {},
+                                }}
+                                helperText={selectedStructureId ? 'From fee structure' : 'Enter fee amount'}
                             />
                         </Grid>
                         <Grid item xs={12} md={6}>
@@ -1002,13 +1091,17 @@ const FeesPage: React.FC = () => {
                                 label="Description"
                                 value={bulkCreateForm.description}
                                 onChange={(e) => setBulkCreateForm({ ...bulkCreateForm, description: e.target.value })}
+                                InputProps={{
+                                    readOnly: !!selectedStructureId,
+                                    sx: selectedStructureId ? { bgcolor: 'action.hover' } : {},
+                                }}
                             />
                         </Grid>
                         <Grid item xs={12}>
                             <TextField
                                 fullWidth
                                 size="small"
-                                label="Notes"
+                                label="Notes (optional)"
                                 multiline
                                 rows={2}
                                 value={bulkCreateForm.notes}
@@ -1019,7 +1112,11 @@ const FeesPage: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenBulkCreateDialog(false)}>Cancel</Button>
-                    <Button onClick={handleBulkCreateSubmit} variant="contained" disabled={isBulkCreating}>
+                    <Button
+                        onClick={handleBulkCreateSubmit}
+                        variant="contained"
+                        disabled={isBulkCreating || !bulkCreateForm.class_id || bulkCreateForm.amount <= 0}
+                    >
                         {isBulkCreating ? 'Generating...' : 'Generate Fees'}
                     </Button>
                 </DialogActions>

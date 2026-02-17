@@ -38,7 +38,7 @@ class LearningContent(TenantBaseModel):
     
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    content_type = Column(SQLEnum(ContentType), default=ContentType.VIDEO)
+    content_type = Column(SQLEnum(ContentType, values_callable=lambda x: [e.value for e in x]), default=ContentType.VIDEO)
     content_url = Column(Text, nullable=False)
     duration_seconds = Column(Integer, nullable=True) # For video duration
     order = Column(Integer, default=0)

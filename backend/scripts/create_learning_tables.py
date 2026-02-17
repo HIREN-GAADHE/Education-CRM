@@ -60,7 +60,8 @@ def create_learning_tables():
             print("Added FK constraint to learning_modules.")
         except Exception:
             # Constraint/Key likely exists or name collision
-            pass
+            connection.rollback()
+            connection.begin()
 
         # Check and add FK for learning_contents.tenant_id
         try:
@@ -71,7 +72,8 @@ def create_learning_tables():
             """))
             print("Added FK constraint to learning_contents.")
         except Exception:
-            pass
+            connection.rollback()
+            connection.begin()
 
         # Check and add FK for learning_contents.module_id (if missed)
         try:
@@ -82,7 +84,8 @@ def create_learning_tables():
             """))
             print("Added Module FK constraint to learning_contents.")
         except Exception:
-            pass
+            connection.rollback()
+            connection.begin()
             
         connection.commit()
         print("Learning Hub tables verified/updated successfully!")

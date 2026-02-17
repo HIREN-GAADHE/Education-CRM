@@ -14,7 +14,10 @@ def create_learning_tables():
             connection.execute(text("CREATE TYPE contenttype AS ENUM ('video', 'document', 'link');"))
             print("Created contenttype enum.")
         except Exception:
+            connection.rollback()
             print("Enum type might already exist, skipping...")
+            # Re-start transaction
+            connection.begin()
 
         # 2. Create Learning Modules Table (with FK)
         # Note: We use IF NOT EXISTS. If table exists, this is skipped.

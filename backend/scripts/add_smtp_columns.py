@@ -11,7 +11,10 @@ import os
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost:5432/eduerp")
 
 def add_smtp_columns():
-    conn = psycopg2.connect(DATABASE_URL)
+    # Fix for asyncpg connection string which psycopg2 doesn't understand
+    db_url = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    
+    conn = psycopg2.connect(db_url)
     conn.autocommit = True
     cursor = conn.cursor()
     

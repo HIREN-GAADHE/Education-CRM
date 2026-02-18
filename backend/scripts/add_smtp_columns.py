@@ -5,8 +5,10 @@ Run this with: python scripts/add_smtp_columns.py
 import psycopg2
 from psycopg2 import sql
 
+import os
+
 # Database connection (sync driver)
-DATABASE_URL = "postgresql://postgres:admin@localhost:5432/eduerp"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost:5432/eduerp")
 
 def add_smtp_columns():
     conn = psycopg2.connect(DATABASE_URL)

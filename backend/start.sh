@@ -7,6 +7,10 @@ echo "Starting deployment checks..."
 echo "Running L&D Hub migrations..."
 python -m scripts.create_learning_tables
 
+# 2. Run SMTP Column Migration (Tenant Settings)
+echo "Running SMTP migration..."
+python -m scripts.add_smtp_columns
+
 
 
 # 3. Run General Seed if requested (Legacy/Existing)

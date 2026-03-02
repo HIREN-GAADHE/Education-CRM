@@ -42,9 +42,16 @@ from app.models import (
 # this is the Alembic Config object
 config = context.config
 
-# Convert async URL to sync URL for alembic
-# postgresql+asyncpg://... -> postgresql://...
-sync_database_url = settings.DATABASE_URL.replace("+asyncpg", "")
+# Convert async URL to sync URL for alembic.
+# Also strip Neon-specific params that psycopg2 doesn't understand.
+_db_url = settings.DATABASE_URL
+sync_database_url = (
+    _db_url
+    .replace("+asyncpg", "")
+    .replace("&channel_binding=require", "")
+    .replace("?channel_binding=require&", "?")
+    .replace("?channel_binding=require", "")
+)
 config.set_main_option("sqlalchemy.url", sync_database_url)
 
 # Interpret the config file for Python logging.

@@ -337,6 +337,46 @@ async def export_students(
         )
 
 
+@router.get("/all")
+@require_permission("students", "read")
+async def list_all_students_for_dropdown(
+    request: Request,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return lightweight student list for dropdowns — no pagination, all tenant students."""
+    try:
+        query = select(
+            Student.id,
+            Student.first_name,
+            Student.last_name,
+            Student.admission_number,
+        ).where(
+            Student.is_deleted == False,
+            Student.tenant_id == current_user.tenant_id,
+            Student.status.in_(["active", "enrolled"]),
+        )
+        if search:
+            query = query.where(
+                or_(
+                    Student.first_name.ilike(f"%{search}%"),
+                    Student.last_name.ilike(f"%{search}%"),
+                    Student.admission_number.ilike(f"%{search}%"),
+                )
+            )
+        query = query.order_by(Student.first_name, Student.last_name)
+        result = await db.execute(query)
+        rows = result.fetchall()
+        return [
+            {"id": str(r.id), "first_name": r.first_name, "last_name": r.last_name, "admission_number": r.admission_number}
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"Error listing students for dropdown: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch students")
+
+
 @router.get("/{student_id}", response_model=StudentResponse)
 @require_permission("students", "read")
 async def get_student(

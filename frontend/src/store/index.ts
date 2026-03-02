@@ -27,6 +27,10 @@ import './api/academicApi';
 import './api/paymentApi';
 import './api/portalApi';
 import './api/transportApi';
+import './api/ptmApi';
+import './api/healthApi';
+import './api/dailyDiaryApi';
+import './api/payrollApi';
 
 export const store = configureStore({
     reducer: {

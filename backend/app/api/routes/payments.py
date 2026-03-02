@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.config.database import get_db
 from app.core.middleware.auth import get_current_user
+from app.core.permissions import require_permission
 from app.models.user import User
 from app.models.payment import (
     PaymentGatewayConfig,
@@ -59,7 +60,9 @@ async def list_gateway_configs(
 
 
 @router.post("/gateways", response_model=PaymentGatewayConfigResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("payments", "update")
 async def create_gateway_config(
+    request: Request,
     config_data: PaymentGatewayConfigCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -107,7 +110,9 @@ async def create_gateway_config(
 
 
 @router.delete("/gateways/{gateway}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("payments", "delete")
 async def delete_gateway_config(
+    request: Request,
     gateway: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -302,9 +307,12 @@ async def verify_payment(
         signature=signature,
     )
     
-    # Get order for response
+    # Get order for response — verify it belongs to this tenant
     order_result = await db.execute(
-        select(PaymentOrder).where(PaymentOrder.gateway_order_id == order_id)
+        select(PaymentOrder).where(
+            PaymentOrder.gateway_order_id == order_id,
+            PaymentOrder.tenant_id == current_user.tenant_id,
+        )
     )
     order = order_result.scalar_one_or_none()
     

@@ -31,6 +31,18 @@ export interface TransportRoute {
     route_code?: string;
     description?: string;
     vehicle_id?: string;
+    vehicle_number?: string;
+    vehicle_type?: string;
+    driver_id?: string;
+    driver_name?: string;
+    conductor_id?: string;
+    conductor_name?: string;
+    pickup_start_time?: string;
+    pickup_end_time?: string;
+    drop_start_time?: string;
+    drop_end_time?: string;
+    total_distance_km?: number;
+    estimated_duration_minutes?: number;
     monthly_fee?: number;
     status: string;
     stops: RouteStop[];
@@ -41,6 +53,7 @@ export interface StudentTransport {
     id: string;
     student_id: string;
     student_name?: string;
+    student_class?: string;
     route_id: string;
     route_name?: string;
     stop_id?: string;
@@ -71,7 +84,7 @@ export const transportApi = apiSlice.injectEndpoints({
                 if (status) params.append('status', status);
                 return `/transport/vehicles?${params.toString()}`;
             },
-            providesTags: ['Academic'],
+            providesTags: ['Transport'],
         }),
         createVehicle: builder.mutation<Vehicle, Partial<Vehicle>>({
             query: (body) => ({
@@ -79,14 +92,14 @@ export const transportApi = apiSlice.injectEndpoints({
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['Academic'],
+            invalidatesTags: ['Transport'],
         }),
         deleteVehicle: builder.mutation<void, string>({
             query: (id) => ({
                 url: `/transport/vehicles/${id}`,
                 method: 'DELETE',
             }),
-            invalidatesTags: ['Academic'],
+            invalidatesTags: ['Transport'],
         }),
         updateVehicle: builder.mutation<Vehicle, { id: string; data: Partial<Vehicle> }>({
             query: ({ id, data }) => ({
@@ -94,40 +107,88 @@ export const transportApi = apiSlice.injectEndpoints({
                 method: 'PUT',
                 body: data,
             }),
-            invalidatesTags: ['Academic'],
+            invalidatesTags: ['Transport'],
+        }),
+        updateVehicleStatus: builder.mutation<Vehicle, { id: string; status: string }>({
+            query: ({ id, status }) => ({
+                url: `/transport/vehicles/${id}/status`,
+                method: 'PATCH',
+                body: { status },
+            }),
+            invalidatesTags: ['Transport'],
         }),
 
         // Routes
         getRoutes: builder.query<{ items: TransportRoute[]; total: number }, { page?: number; pageSize?: number; status?: string }>({
-            query: ({ page = 1, pageSize = 20, status }) => {
+            query: ({ page = 1, pageSize = 50, status }) => {
                 const params = new URLSearchParams();
                 params.append('page', page.toString());
                 params.append('page_size', pageSize.toString());
                 if (status) params.append('status', status);
                 return `/transport/routes?${params.toString()}`;
             },
-            providesTags: ['Academic'],
+            providesTags: ['Transport'],
         }),
-        createRoute: builder.mutation<TransportRoute, { route_name: string; route_code?: string; description?: string; vehicle_id?: string; monthly_fee?: number; stops?: { stop_name: string; stop_order: number }[] }>({
+        createRoute: builder.mutation<TransportRoute, Partial<TransportRoute> & { stops?: Partial<RouteStop>[] }>({
             query: (body) => ({
                 url: '/transport/routes',
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['Academic'],
+            invalidatesTags: ['Transport'],
         }),
+        updateRoute: builder.mutation<TransportRoute, { id: string; data: Partial<TransportRoute> }>({
+            query: ({ id, data }) => ({
+                url: `/transport/routes/${id}`,
+                method: 'PUT',
+                body: data,
+            }),
+            invalidatesTags: ['Transport'],
+        }),
+        deleteRoute: builder.mutation<void, string>({
+            query: (id) => ({
+                url: `/transport/routes/${id}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['Transport'],
+        }),
+        updateRouteStatus: builder.mutation<{ id: string; status: string }, { id: string; status: string }>({
+            query: ({ id, status }) => ({
+                url: `/transport/routes/${id}/status`,
+                method: 'PATCH',
+                body: { status },
+            }),
+            invalidatesTags: ['Transport'],
+        }),
+
+        // Stops
         addRouteStop: builder.mutation<RouteStop, { routeId: string; stop: Partial<RouteStop> }>({
             query: ({ routeId, stop }) => ({
                 url: `/transport/routes/${routeId}/stops`,
                 method: 'POST',
                 body: stop,
             }),
-            invalidatesTags: ['Academic'],
+            invalidatesTags: ['Transport'],
+        }),
+        updateRouteStop: builder.mutation<RouteStop, { routeId: string; stopId: string; data: Partial<RouteStop> }>({
+            query: ({ routeId, stopId, data }) => ({
+                url: `/transport/routes/${routeId}/stops/${stopId}`,
+                method: 'PUT',
+                body: data,
+            }),
+            invalidatesTags: ['Transport'],
+        }),
+        deleteRouteStop: builder.mutation<void, { routeId: string; stopId: string }>({
+            query: ({ routeId, stopId }) => ({
+                url: `/transport/routes/${routeId}/stops/${stopId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['Transport'],
         }),
 
         // Student Assignments
         getAssignments: builder.query<{ items: StudentTransport[]; total: number }, { page?: number; pageSize?: number; routeId?: string; activeOnly?: boolean }>({
-            query: ({ page = 1, pageSize = 20, routeId, activeOnly = true }) => {
+            query: ({ page = 1, pageSize = 50, routeId, activeOnly = true }) => {
                 const params = new URLSearchParams();
                 params.append('page', page.toString());
                 params.append('page_size', pageSize.toString());
@@ -135,7 +196,7 @@ export const transportApi = apiSlice.injectEndpoints({
                 params.append('active_only', activeOnly.toString());
                 return `/transport/assignments?${params.toString()}`;
             },
-            providesTags: ['Student'],
+            providesTags: ['Transport'],
         }),
         assignStudent: builder.mutation<StudentTransport, { student_id: string; route_id: string; stop_id?: string; trip_type?: string; monthly_fee?: number }>({
             query: (body) => ({
@@ -143,20 +204,20 @@ export const transportApi = apiSlice.injectEndpoints({
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['Student', 'Academic'],
+            invalidatesTags: ['Transport'],
         }),
         removeAssignment: builder.mutation<void, string>({
             query: (id) => ({
                 url: `/transport/assignments/${id}`,
                 method: 'DELETE',
             }),
-            invalidatesTags: ['Student', 'Academic'],
+            invalidatesTags: ['Transport'],
         }),
 
         // Stats
         getTransportStats: builder.query<TransportStats, void>({
             query: () => '/transport/stats',
-            providesTags: ['Academic'],
+            providesTags: ['Transport'],
         }),
     }),
 });
@@ -166,9 +227,15 @@ export const {
     useCreateVehicleMutation,
     useDeleteVehicleMutation,
     useUpdateVehicleMutation,
+    useUpdateVehicleStatusMutation,
     useGetRoutesQuery,
     useCreateRouteMutation,
+    useUpdateRouteMutation,
+    useDeleteRouteMutation,
+    useUpdateRouteStatusMutation,
     useAddRouteStopMutation,
+    useUpdateRouteStopMutation,
+    useDeleteRouteStopMutation,
     useGetAssignmentsQuery,
     useAssignStudentMutation,
     useRemoveAssignmentMutation,

@@ -1,7 +1,7 @@
 """
 Roles API Router - CRUD operations for roles with module access control
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from typing import Optional, List
@@ -11,29 +11,47 @@ from datetime import datetime
 
 from app.config.database import get_db
 from app.models import Role, Permission, RolePermission, RoleModuleAccess
+from app.models.user import User
+from app.core.middleware.auth import get_current_user
+from app.core.permissions import require_permission
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
-# Available modules that can be assigned to roles
+# Available modules that can be assigned to roles (mirrors sidebar sections)
 AVAILABLE_MODULES = [
-    {"key": "dashboard", "name": "Dashboard", "icon": "Dashboard", "category": "Main"},
-    {"key": "calendar", "name": "Calendar", "icon": "CalendarMonth", "category": "Main"},
-    {"key": "students", "name": "Students", "icon": "School", "category": "Academic"},
-    {"key": "courses", "name": "Courses", "icon": "MenuBook", "category": "Academic"},
-    {"key": "attendance", "name": "Attendance", "icon": "EventNote", "category": "Academic"},
-    {"key": "timetable", "name": "Timetable", "icon": "Schedule", "category": "Academic"},
-    {"key": "examinations", "name": "Examinations", "icon": "Quiz", "category": "Academic"},
-    {"key": "certificates", "name": "Certificates", "icon": "CardMembership", "category": "Academic"},
-    {"key": "staff", "name": "Staff", "icon": "Badge", "category": "Administration"},
-    {"key": "fees", "name": "Fees & Finance", "icon": "Payments", "category": "Administration"},
-    {"key": "payments", "name": "Online Payments", "icon": "CreditCard", "category": "Administration"},
-    {"key": "communication", "name": "Messages", "icon": "Chat", "category": "Communication"},
-    {"key": "reports", "name": "Reports", "icon": "Assessment", "category": "Communication"},
-    {"key": "transport", "name": "Transport", "icon": "DirectionsBus", "category": "Services"},
-    {"key": "users", "name": "Users", "icon": "People", "category": "System"},
-    {"key": "roles", "name": "Roles & Access", "icon": "Security", "category": "System"},
-    {"key": "settings", "name": "Settings", "icon": "Settings", "category": "System"},
-    {"key": "marketplace", "name": "Marketplace", "icon": "Storefront", "category": "Services"},
+    # ── Main ──────────────────────────────────────────────────────────────────
+    {"key": "dashboard",     "name": "Dashboard",          "icon": "Dashboard",      "category": "Main"},
+    {"key": "calendar",      "name": "Calendar",            "icon": "CalendarMonth",  "category": "Main"},
+
+    # ── Academic ──────────────────────────────────────────────────────────────
+    {"key": "students",      "name": "Classes & Students",  "icon": "School",         "category": "Academic"},
+    {"key": "courses",       "name": "Courses",             "icon": "MenuBook",       "category": "Academic"},
+    {"key": "attendance",    "name": "Attendance",          "icon": "EventNote",      "category": "Academic"},
+    {"key": "timetable",     "name": "Timetable",           "icon": "Schedule",       "category": "Academic"},
+    {"key": "examinations",  "name": "Examinations",        "icon": "Quiz",           "category": "Academic"},
+    {"key": "certificates",  "name": "Certificates",        "icon": "CardMembership", "category": "Academic"},
+
+    # ── Administration ────────────────────────────────────────────────────────
+    {"key": "staff",         "name": "Staff",               "icon": "Badge",          "category": "Administration"},
+    {"key": "payroll",       "name": "Payroll",             "icon": "AccountBalance", "category": "Administration"},
+    {"key": "fees",          "name": "Fees & Finance",      "icon": "Payments",       "category": "Administration"},
+    {"key": "payments",      "name": "Online Payments",     "icon": "CreditCard",     "category": "Administration"},
+    {"key": "transport",     "name": "Transport",           "icon": "DirectionsBus",  "category": "Administration"},
+
+    # ── Communication ─────────────────────────────────────────────────────────
+    {"key": "communication", "name": "Messages",            "icon": "Chat",           "category": "Communication"},
+    {"key": "reports",       "name": "Reports",             "icon": "Assessment",     "category": "Communication"},
+
+    # ── Student Welfare ───────────────────────────────────────────────────────
+    {"key": "health_records","name": "Health Records",      "icon": "HealthAndSafety","category": "Student Welfare"},
+    {"key": "daily_diary",   "name": "Daily Diary",         "icon": "MenuBook",       "category": "Student Welfare"},
+    {"key": "ptm",           "name": "Parent-Teacher Meet", "icon": "MeetingRoom",    "category": "Student Welfare"},
+    {"key": "learning",      "name": "L&D Hub",             "icon": "School",         "category": "Student Welfare"},
+
+    # ── System ────────────────────────────────────────────────────────────────
+    {"key": "users",         "name": "Users",               "icon": "People",         "category": "System"},
+    {"key": "roles",         "name": "Roles & Access",      "icon": "Security",       "category": "System"},
+    {"key": "settings",      "name": "Settings",            "icon": "Settings",       "category": "System"},
 ]
 
 
@@ -113,18 +131,27 @@ class RoleListResponse(BaseModel):
 
 
 @router.get("/metadata/modules", response_model=List[ModuleInfo])
-async def get_available_modules():
+async def get_available_modules(
+    current_user: User = Depends(get_current_user),
+):
     """Get list of available modules that can be assigned to roles."""
     return AVAILABLE_MODULES
 
 
 @router.get("", response_model=RoleListResponse)
+@require_permission("roles", "read")
 async def list_roles(
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List all roles."""
-    print("DEBUG: Executing list_roles from app/api/routes/roles.py (WRONG FILE)")
-    result = await db.execute(select(Role).order_by(Role.level))
+    """List all roles for the current tenant."""
+    # Include system roles (tenant_id IS NULL) + tenant-specific roles
+    result = await db.execute(
+        select(Role).where(
+            (Role.tenant_id == current_user.tenant_id) | (Role.tenant_id == None)
+        ).order_by(Role.level)
+    )
     roles = result.scalars().all()
     
     role_responses = []
@@ -178,8 +205,11 @@ async def list_roles(
 
 
 @router.get("/permissions", response_model=List[PermissionResponse])
+@require_permission("roles", "read")
 async def list_permissions(
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """List all available permissions."""
     result = await db.execute(select(Permission).order_by(Permission.category, Permission.code))
@@ -188,12 +218,20 @@ async def list_permissions(
 
 
 @router.get("/{role_id}", response_model=RoleResponse)
+@require_permission("roles", "read")
 async def get_role(
+    request: Request,
     role_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get a single role by ID."""
-    result = await db.execute(select(Role).where(Role.id == role_id))
+    """Get a single role by ID (within current tenant or system roles)."""
+    result = await db.execute(
+        select(Role).where(
+            Role.id == role_id,
+            (Role.tenant_id == current_user.tenant_id) | (Role.tenant_id == None)
+        )
+    )
     role = result.scalar_one_or_none()
     
     if not role:
@@ -245,18 +283,16 @@ async def get_role(
 
 
 @router.post("", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("roles", "create")
 async def create_role(
+    request: Request,
     role_data: RoleCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Create a new role."""
-    # Get tenant
-    from app.models import Tenant
-    tenant_result = await db.execute(select(Tenant).limit(1))
-    tenant = tenant_result.scalar_one_or_none()
-    
+    """Create a new role for the current tenant."""
     role = Role(
-        tenant_id=tenant.id if tenant else None,
+        tenant_id=current_user.tenant_id,  # Scoped to current tenant
         name=role_data.name,
         display_name=role_data.display_name,
         description=role_data.description,
@@ -320,13 +356,21 @@ async def create_role(
 
 
 @router.put("/{role_id}", response_model=RoleResponse)
+@require_permission("roles", "update")
 async def update_role(
+    request: Request,
     role_id: UUID,
     role_data: RoleUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Update a role."""
-    result = await db.execute(select(Role).where(Role.id == role_id))
+    """Update a role (within current tenant)."""
+    result = await db.execute(
+        select(Role).where(
+            Role.id == role_id,
+            Role.tenant_id == current_user.tenant_id,
+        )
+    )
     role = result.scalar_one_or_none()
     
     if not role:
@@ -374,12 +418,20 @@ async def update_role(
 
 
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("roles", "delete")
 async def delete_role(
+    request: Request,
     role_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Delete a role."""
-    result = await db.execute(select(Role).where(Role.id == role_id))
+    """Delete a role (within current tenant only)."""
+    result = await db.execute(
+        select(Role).where(
+            Role.id == role_id,
+            Role.tenant_id == current_user.tenant_id,  # Can't delete system/other-tenant roles
+        )
+    )
     role = result.scalar_one_or_none()
     
     if not role:

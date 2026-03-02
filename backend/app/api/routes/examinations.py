@@ -1,7 +1,7 @@
 """
 Examination API routes.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -9,6 +9,7 @@ from uuid import UUID
 
 from app.config.database import get_db
 from app.core.middleware.auth import get_current_user
+from app.core.permissions import require_permission
 from app.models.user import User
 from app.models.examination import (
     Examination,
@@ -43,7 +44,9 @@ router = APIRouter(prefix="/examinations", tags=["Examinations"])
 # ============== Grade Scale Endpoints ==============
 
 @router.get("/grade-scales")
+@require_permission("examinations", "read")
 async def list_grade_scales(
+    request: Request,
     active_only: bool = True,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -59,7 +62,9 @@ async def list_grade_scales(
 
 
 @router.post("/grade-scales", response_model=GradeScaleResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("examinations", "create")
 async def create_grade_scale(
+    request: Request,
     scale_data: GradeScaleCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -86,7 +91,9 @@ async def create_grade_scale(
 # ============== Examination Endpoints ==============
 
 @router.get("", response_model=ExaminationListResponse)
+@require_permission("examinations", "read")
 async def list_examinations(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     class_name: Optional[str] = None,
@@ -121,7 +128,9 @@ async def list_examinations(
 
 
 @router.post("", response_model=ExaminationResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("examinations", "create")
 async def create_examination(
+    request: Request,
     exam_data: ExaminationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -180,7 +189,9 @@ async def create_examination(
 
 
 @router.get("/{exam_id}", response_model=ExaminationResponse)
+@require_permission("examinations", "read")
 async def get_examination(
+    request: Request,
     exam_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -204,7 +215,9 @@ async def get_examination(
 
 
 @router.put("/{exam_id}", response_model=ExaminationResponse)
+@require_permission("examinations", "update")
 async def update_examination(
+    request: Request,
     exam_id: UUID,
     exam_data: ExaminationUpdate,
     db: AsyncSession = Depends(get_db),
@@ -247,7 +260,9 @@ async def update_examination(
 
 
 @router.delete("/{exam_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("examinations", "delete")
 async def delete_examination(
+    request: Request,
     exam_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -280,7 +295,9 @@ async def delete_examination(
 
 
 @router.post("/{exam_id}/publish", response_model=ExaminationResponse)
+@require_permission("examinations", "update")
 async def publish_results(
+    request: Request,
     exam_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -306,7 +323,9 @@ async def publish_results(
 # ============== Results Endpoints ==============
 
 @router.get("/{exam_id}/results", response_model=ExamResultListResponse)
+@require_permission("examinations", "read")
 async def get_exam_results(
+    request: Request,
     exam_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -322,8 +341,12 @@ async def get_exam_results(
     # Enrich with student names
     items = []
     for r in results:
+        # Enrich with student names — filter by tenant for isolation
         student_result = await db.execute(
-            select(Student).where(Student.id == r.student_id)
+            select(Student).where(
+                Student.id == r.student_id,
+                Student.tenant_id == current_user.tenant_id,
+            )
         )
         student = student_result.scalar_one_or_none()
         
@@ -358,7 +381,9 @@ async def get_exam_results(
 
 
 @router.post("/{exam_id}/results", response_model=ExamResultResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("examinations", "create")
 async def enter_result(
+    request: Request,
     exam_id: UUID,
     result_data: ExamResultCreate,
     db: AsyncSession = Depends(get_db),
@@ -378,7 +403,9 @@ async def enter_result(
 
 
 @router.post("/{exam_id}/results/bulk", response_model=dict)
+@require_permission("examinations", "create")
 async def enter_bulk_results(
+    request: Request,
     exam_id: UUID,
     bulk_data: BulkExamResultCreate,
     db: AsyncSession = Depends(get_db),
@@ -403,7 +430,9 @@ async def enter_bulk_results(
 
 
 @router.delete("/{exam_id}/results/{result_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("examinations", "delete")
 async def delete_result(
+    request: Request,
     exam_id: UUID,
     result_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -427,7 +456,9 @@ async def delete_result(
 
 
 @router.get("/{exam_id}/statistics", response_model=ExamStatisticsResponse)
+@require_permission("examinations", "read")
 async def get_exam_statistics(
+    request: Request,
     exam_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -448,7 +479,9 @@ async def get_exam_statistics(
 # ============== Student Transcript & GPA ==============
 
 @router.get("/students/{student_id}/transcript")
+@require_permission("examinations", "read")
 async def get_student_transcript(
+    request: Request,
     student_id: UUID,
     academic_year: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -472,7 +505,9 @@ async def get_student_transcript(
 
 
 @router.post("/students/{student_id}/calculate-gpa", response_model=StudentGPAResponse)
+@require_permission("examinations", "update")
 async def calculate_student_gpa(
+    request: Request,
     student_id: UUID,
     academic_year: str,
     term: Optional[str] = None,

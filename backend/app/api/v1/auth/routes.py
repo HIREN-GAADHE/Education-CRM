@@ -151,33 +151,46 @@ async def login(
     from app.models import UserRole
     
     allowed_modules = []
-    # Get user's primary role
-    user_role_result = await db.execute(
-        select(UserRole).where(
-            UserRole.user_id == user.id,
-            UserRole.is_primary == True
-        )
+
+    # --- Check if user has tenant-admin or super-admin privileges ---------------
+    # Load user roles to detect admin flags
+    user_roles_result = await db.execute(
+        select(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id)
     )
-    user_role = user_role_result.scalar_one_or_none()
-    
-    if user_role:
-        # Get module access for this role
-        module_access_result = await db.execute(
-            select(RoleModuleAccess, Module.code)
-            .join(Module, Module.id == RoleModuleAccess.module_id)
-            .where(RoleModuleAccess.role_id == user_role.role_id)
-            .where(RoleModuleAccess.access_level != AccessLevel.NONE)
-        )
-        for row in module_access_result.all():
-            rma, module_code = row
-            allowed_modules.append(module_code.lower())
-    
-    # If no module access defined for role, allow all modules (backwards compatibility)
-    if not allowed_modules and role_level <= 2:  # Admin level or higher gets all access
-        # Get all available modules
+    user_all_roles = user_roles_result.scalars().all()
+    is_tenant_or_super_admin = (
+        role_level <= 2
+        or any(getattr(r, 'is_tenant_admin', False) for r in user_all_roles)
+    )
+
+    if is_tenant_or_super_admin:
+        # Admins always get access to ALL modules — ignore per-role restrictions
         all_modules_result = await db.execute(select(Module.code))
         allowed_modules = [m.lower() for m in all_modules_result.scalars().all()]
-    
+    else:
+        # Get user's primary role module assignments for non-admin users
+        user_role_result = await db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user.id,
+                UserRole.is_primary == True
+            )
+        )
+        user_role = user_role_result.scalar_one_or_none()
+
+        if user_role:
+            module_access_result = await db.execute(
+                select(RoleModuleAccess, Module.code)
+                .join(Module, Module.id == RoleModuleAccess.module_id)
+                .where(RoleModuleAccess.role_id == user_role.role_id)
+                .where(RoleModuleAccess.access_level != AccessLevel.NONE)
+            )
+            for row in module_access_result.all():
+                rma, module_code = row
+                allowed_modules.append(module_code.lower())
+        # If still empty for non-admin: empty list = sidebar shows all (backwards compat)
+
     # Get tenant settings for session timeout
     from app.api.routes.settings import get_or_create_settings
     tenant_settings = await get_or_create_settings(db, user.tenant_id)

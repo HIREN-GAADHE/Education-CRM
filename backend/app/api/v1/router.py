@@ -28,6 +28,10 @@ from app.api.v1.routes.academic import router as academic_router
 from app.api.routes.reminders import router as reminders_router
 from app.api.routes.fee_structures import router as fee_structures_router
 from app.api.routes.learning_routes import router as learning_router
+from app.api.routes.ptm import router as ptm_router
+from app.api.routes.health import router as health_router
+from app.api.routes.daily_diary import router as daily_diary_router
+from app.api.routes.payroll import router as payroll_router
 
 from app.api.v1.super_admin.routes import router as super_admin_router
 
@@ -63,6 +67,10 @@ api_router.include_router(settings_router, tags=["Settings"])
 api_router.include_router(reminders_router, tags=["Reminders"])
 api_router.include_router(fee_structures_router, tags=["Fee Structures"])
 api_router.include_router(learning_router, prefix="/learning", tags=["Learning"])
+api_router.include_router(ptm_router, tags=["PTM"])
+api_router.include_router(health_router, tags=["Health Records"])
+api_router.include_router(daily_diary_router, tags=["Daily Diary"])
+api_router.include_router(payroll_router, tags=["Payroll"])
 
 
 @api_router.get("/health")

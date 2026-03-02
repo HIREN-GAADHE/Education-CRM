@@ -34,9 +34,14 @@ import {
 
 
     Class as ClassIcon, // Added
+    MeetingRoom as PTMIcon,
+    DirectionsBus as TransportIcon,
+    HealthAndSafety as HealthIcon,
+    MenuBook as DiaryIcon,
+    AccountBalance as PayrollIcon,
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
-import { selectUser, selectRestrictedModules, selectRoleLevel } from '@/store/slices/authSlice';
+import { selectUser, selectRestrictedModules, selectRoleLevel, selectAllowedModules } from '@/store/slices/authSlice';
 import { selectInstitutionName, selectInstitutionLogoUrl } from '@/store/slices/uiSlice';
 
 interface SidebarProps {
@@ -74,21 +79,22 @@ const navSections: NavSection[] = [
     {
         title: 'Academic',
         items: [
-            { label: 'Classes', path: '/classes', icon: <ClassIcon />, moduleKey: 'students' }, // Added
+            { label: 'Classes', path: '/classes', icon: <ClassIcon />, moduleKey: 'students' },
             { label: 'Students', path: '/students', icon: <SchoolIcon />, moduleKey: 'students' },
             { label: 'Courses', path: '/courses', icon: <CoursesIcon />, moduleKey: 'courses' },
             { label: 'Attendance', path: '/attendance', icon: <AttendanceIcon />, moduleKey: 'attendance' },
             { label: 'Timetable', path: '/timetable', icon: <TimetableIcon />, moduleKey: 'timetable' },
             { label: 'Examinations', path: '/examinations', icon: <ExamIcon />, moduleKey: 'examinations' },
-
         ],
     },
     {
         title: 'Administration',
         items: [
             { label: 'Staff', path: '/staff', icon: <StaffIcon />, moduleKey: 'staff' },
+            { label: 'Payroll', path: '/payroll', icon: <PayrollIcon />, badge: 'New', badgeColor: 'success', moduleKey: 'payroll' },
             { label: 'Fees & Finance', path: '/fees', icon: <PaymentsIcon />, moduleKey: 'fees' },
             { label: 'Online Payments', path: '/payments', icon: <OnlinePaymentsIcon />, moduleKey: 'payments' },
+            { label: 'Transport', path: '/transport', icon: <TransportIcon />, moduleKey: 'transport' },
         ],
     },
     {
@@ -99,8 +105,11 @@ const navSections: NavSection[] = [
         ],
     },
     {
-        title: 'Services',
+        title: 'Student Welfare',
         items: [
+            { label: 'Health Records', path: '/health-records', icon: <HealthIcon />, badge: 'New', badgeColor: 'error', moduleKey: 'health_records' },
+            { label: 'Daily Diary', path: '/daily-diary', icon: <DiaryIcon />, badge: 'New', badgeColor: 'secondary', moduleKey: 'daily_diary' },
+            { label: 'Parent-Teacher Meet', path: '/ptm', icon: <PTMIcon />, moduleKey: 'ptm' },
             { label: 'L&D Hub', path: '/learning', icon: <SchoolIcon />, badge: 'New', badgeColor: 'success', moduleKey: 'learning' },
         ],
     },
@@ -128,6 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const location = useLocation();
     const user = useSelector(selectUser);
     const restrictedModules = useSelector(selectRestrictedModules);
+    const allowedModules = useSelector(selectAllowedModules);
     const roleLevel = useSelector(selectRoleLevel);
     const institutionName = useSelector(selectInstitutionName);
     const institutionLogoUrl = useSelector(selectInstitutionLogoUrl);
@@ -155,14 +165,28 @@ const Sidebar: React.FC<SidebarProps> = ({
                     return true;
                 }
 
-                // Hide items that have a restricted moduleKey
+                // Hide items that are in tenant's restricted (read-only) module list
                 if (item.moduleKey && restrictedModules.includes(item.moduleKey)) {
                     return false;
                 }
+
+                // Role-level module access: only applies to NON-ADMIN users.
+                // Admins (roleLevel <= 2) always see all non-restricted modules.
+                // For regular users: if their role has explicit module assignments,
+                // only show those modules. Empty allowedModules = no restriction.
+                if (
+                    !isAdmin &&
+                    allowedModules.length > 0 &&
+                    item.moduleKey &&
+                    !allowedModules.includes(item.moduleKey)
+                ) {
+                    return false;
+                }
+
                 return true;
             })
         }))
-        .filter(section => section.items.length > 0);  // Remove empty sections
+        .filter(section => section.items.length > 0);
 
 
     const handleNavigate = (path: string) => {

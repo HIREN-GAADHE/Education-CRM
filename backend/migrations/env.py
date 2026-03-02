@@ -10,12 +10,33 @@ from alembic import context
 from app.config import settings
 from app.models.base import Base
 
-# Import all models so they are registered with Base.metadata
+# ── Import ALL models so they are registered with Base.metadata ──────────────
+# This ensures alembic tracks every table for autogenerate and upgrade head.
 from app.models import (
+    # Core
     Tenant, User, Role, Permission, RolePermission, UserRole,
     Module, TenantModule, RoleModuleAccess, RefreshToken,
+    # Academic
     Student, Staff, FeeStructure, FeePayment, FeeDiscount,
-    CalendarEvent, Attendance, Message, Report, Course, SchoolClass
+    CalendarEvent, Attendance, Message, Report, Course, SchoolClass,
+    # Notifications, Timetable, Examinations
+    Notification, NotificationTemplate, NotificationPreference,
+    TimeSlot, Room, TimetableEntry, TimetableConflict,
+    Examination, ExamResult, GradeScale, GradeLevel, StudentGPA,
+    # Payments and parent
+    PaymentGatewayConfig, PaymentOrder, PaymentTransaction,
+    PaymentRefund, PaymentNotification,
+    ParentStudent,
+    # Transport
+    Vehicle, TransportRoute, RouteStop, StudentTransport, TransportFee,
+    # Settings and reminders
+    TenantSettings,
+    ReminderSettings, ReminderTemplate, ReminderLog,
+    # PTM, Health, Daily Diary, Payroll
+    PTMSlot, PTMSession, PTMRemark,
+    StudentHealthRecord, NurseVisit, Vaccination,
+    DailyDiary,
+    SalaryStructure, StaffSalaryAssignment, Payslip,
 )
 
 # this is the Alembic Config object

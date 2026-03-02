@@ -40,6 +40,18 @@ from .reminder import (
     ReminderSettings, ReminderTemplate, ReminderLog,
     NotificationChannel, ReminderStatus, ReminderTriggerType
 )
+from .ptm import (
+    PTMSlot, PTMSession, PTMRemark,
+    PTMSessionStatus, PTMReviewerType
+)
+from .health import (
+    StudentHealthRecord, NurseVisit, Vaccination, VaccinationStatus
+)
+from .daily_diary import DailyDiary, MoodType
+from .payroll import (
+    SalaryStructure, StaffSalaryAssignment, Payslip,
+    PayslipStatus, PaymentMode
+)
 
 __all__ = [
     # Base
@@ -154,6 +166,30 @@ __all__ = [
     "NotificationChannel",
     "ReminderStatus",
     "ReminderTriggerType",
+
+    # PTM
+    "PTMSlot",
+    "PTMSession",
+    "PTMRemark",
+    "PTMSessionStatus",
+    "PTMReviewerType",
+
+    # Health Records
+    "StudentHealthRecord",
+    "NurseVisit",
+    "Vaccination",
+    "VaccinationStatus",
+
+    # Daily Diary
+    "DailyDiary",
+    "MoodType",
+
+    # Payroll
+    "SalaryStructure",
+    "StaffSalaryAssignment",
+    "Payslip",
+    "PayslipStatus",
+    "PaymentMode",
 ]
 
 

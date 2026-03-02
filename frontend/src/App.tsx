@@ -52,6 +52,10 @@ import StudentDashboard from './pages/StudentDashboard';
 import TransportPage from './pages/Transport';
 import MarketplacePage from './pages/Marketplace';
 import ClassesPage from './pages/Classes'; // Added
+import PTMScheduling from './pages/PTM/PTMScheduling';
+import HealthRecords from './pages/HealthRecords/HealthRecords';
+import DailyDiaryPage from './pages/DailyDiary/DailyDiary';
+import PayrollPage from './pages/Payroll/Payroll';
 import ForbiddenPage from './pages/Forbidden';
 import NotFoundPage from './pages/NotFound';
 
@@ -165,6 +169,10 @@ const App: React.FC = () => {
                     {/* Additional Modules */}
                     <Route path="transport" element={<TransportPage />} />
                     <Route path="marketplace" element={<MarketplacePage />} />
+                    <Route path="ptm" element={<PTMScheduling />} />
+                    <Route path="health-records" element={<HealthRecords />} />
+                    <Route path="daily-diary" element={<DailyDiaryPage />} />
+                    <Route path="payroll" element={<PayrollPage />} />
 
                     <Route path="*" element={<NotFoundPage />} />
                 </Route>

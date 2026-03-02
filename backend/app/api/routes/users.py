@@ -12,6 +12,9 @@ import math
 from app.config.database import get_db
 from app.models import User, UserStatus, Role, UserRole
 from app.core.security import security
+from app.core.middleware.auth import get_current_user
+from app.core.permissions import require_permission
+from fastapi import Request
 from app.schemas.user import (
     UserCreate, UserUpdate, UserResponse, UserListResponse,
     UserPasswordUpdate, UserRoleAssignment, RoleInfo
@@ -21,15 +24,20 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("", response_model=UserListResponse)
+@require_permission("users", "read")
 async def list_users(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     search: Optional[str] = None,
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List all users with pagination and filtering."""
-    query = select(User).options(selectinload(User.roles))
+    """List users in the current tenant."""
+    query = select(User).options(selectinload(User.roles)).where(
+        User.tenant_id == current_user.tenant_id
+    )
     
     # Apply filters
     if search:
@@ -44,7 +52,7 @@ async def list_users(
         query = query.where(User.status == status)
     
     # Get total count
-    count_query = select(func.count(User.id))
+    count_query = select(func.count(User.id)).where(User.tenant_id == current_user.tenant_id)
     if search:
         count_query = count_query.where(search_filter)
     total_result = await db.execute(count_query)
@@ -94,14 +102,20 @@ async def list_users(
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@require_permission("users", "create")
 async def create_user(
+    request: Request,
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Create a new user."""
-    # Check for duplicate email
+    """Create a new user in the current tenant."""
+    # Check for duplicate email within tenant
     existing = await db.execute(
-        select(User).where(User.email == user_data.email)
+        select(User).where(
+            User.email == user_data.email,
+            User.tenant_id == current_user.tenant_id,
+        )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -109,14 +123,9 @@ async def create_user(
             detail="User with this email already exists"
         )
     
-    # Get tenant
-    from app.models import Tenant
-    tenant_result = await db.execute(select(Tenant).limit(1))
-    tenant = tenant_result.scalar_one_or_none()
-    
-    # Create user
+    # Create user scoped to current tenant
     user = User(
-        tenant_id=tenant.id if tenant else None,
+        tenant_id=current_user.tenant_id,
         email=user_data.email,
         username=user_data.username,
         password_hash=security.hash_password(user_data.password),
@@ -165,13 +174,19 @@ async def create_user(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
+@require_permission("users", "read")
 async def get_user(
+    request: Request,
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get a single user by ID."""
+    """Get a single user by ID (within current tenant)."""
     result = await db.execute(
-        select(User).where(User.id == user_id)
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
     )
     user = result.scalar_one_or_none()
     
@@ -206,14 +221,20 @@ async def get_user(
 
 
 @router.put("/{user_id}", response_model=UserResponse)
+@require_permission("users", "update")
 async def update_user(
+    request: Request,
     user_id: UUID,
     user_data: UserUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Update a user."""
+    """Update a user (within current tenant)."""
     result = await db.execute(
-        select(User).where(User.id == user_id)
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
     )
     user = result.scalar_one_or_none()
     
@@ -256,13 +277,19 @@ async def update_user(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission("users", "delete")
 async def delete_user(
+    request: Request,
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Delete a user."""
+    """Delete a user (within current tenant)."""
     result = await db.execute(
-        select(User).where(User.id == user_id)
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
     )
     user = result.scalar_one_or_none()
     
@@ -285,14 +312,20 @@ async def delete_user(
 
 
 @router.put("/{user_id}/roles", response_model=UserResponse)
+@require_permission("users", "update")
 async def assign_roles(
+    request: Request,
     user_id: UUID,
     role_data: UserRoleAssignment,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Assign roles to a user."""
+    """Assign roles to a user (within current tenant)."""
     result = await db.execute(
-        select(User).where(User.id == user_id)
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        )
     )
     user = result.scalar_one_or_none()
     

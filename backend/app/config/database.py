@@ -4,11 +4,15 @@ from typing import AsyncGenerator
 from app.config.settings import settings
 
 # Create async engine
+# pool_pre_ping: reconnects if Neon closed an idle connection
+# connect_args statement_cache_size=0: required for asyncpg with Neon's pgbouncer
 engine = create_async_engine(
     settings.DATABASE_URL,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
+    pool_size=min(settings.DATABASE_POOL_SIZE, 5),   # Neon free tier has low connection limit
+    max_overflow=min(settings.DATABASE_MAX_OVERFLOW, 5),
     echo=settings.DATABASE_ECHO,
+    pool_pre_ping=True,
+    connect_args={"statement_cache_size": 0},
     future=True
 )
 
@@ -43,42 +47,21 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db():
     """
-    Initialize database tables.
-    Called on application startup.
+    Verify database connectivity on startup.
+    Schema is managed exclusively by 'alembic upgrade head' (run in start.sh before uvicorn).
+    We do NOT call create_all here because it conflicts with Alembic's version tracking.
     """
-    async with engine.begin() as conn:
-        # Import all models here to ensure they're registered
-        from app.models import tenant, user, role, module
-        await conn.run_sync(Base.metadata.create_all)
-
-    # Run idempotent migrations for columns that may be missing in production
-    # This handles cases where models were updated but ALTER TABLE was never run
     import logging
     _logger = logging.getLogger(__name__)
-    
-    migration_statements = [
-        # fee_payments: SoftDeleteMixin columns
-        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE NOT NULL",
-        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP",
-        "ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS deleted_by UUID",
-        # exam_results: is_passed and rank columns
-        "ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS is_passed BOOLEAN",
-        "ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS rank INTEGER",
-    ]
-    
+
+    from sqlalchemy import text
     try:
-        from sqlalchemy import text
-        for stmt in migration_statements:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(text(stmt))
-                _logger.info(f"Migration OK: {stmt[:60]}...")
-            except Exception as e:
-                # Non-fatal: table may not exist yet, or column already exists
-                _logger.warning(f"Migration skipped: {stmt[:60]}... ({e})")
-        _logger.info("Startup migrations completed")
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        _logger.info("Database connectivity verified.")
     except Exception as e:
-        _logger.warning(f"Startup migrations failed (non-fatal): {e}")
+        _logger.error(f"Database connection failed on startup: {e}")
+        raise
 
 
 async def close_db():

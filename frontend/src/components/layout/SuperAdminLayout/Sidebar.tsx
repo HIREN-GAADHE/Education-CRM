@@ -1,25 +1,16 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-    Drawer,
-    Box,
-    List,
-    ListItem,
-    ListItemButton,
-    ListItemIcon,
-    ListItemText,
-    Typography,
-    Divider,
-    Tooltip,
+    Drawer, Box, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+    Typography, Tooltip, Avatar
 } from '@mui/material';
 import {
-    Dashboard as DashboardIcon,
-    Business as TenantIcon,
-    Settings as SettingsIcon,
-    AdminPanelSettings as SuperAdminIcon,
-    Security as SecurityIcon,
-    Logout as LogoutIcon,
-    Analytics as AnalyticsIcon
+    DashboardRounded as DashboardIcon,
+    CorporateFareRounded as TenantIcon,
+    SettingsRounded as SettingsIcon,
+    SecurityRounded as SecurityIcon,
+    LogoutRounded as LogoutIcon,
+    InsightsRounded as AnalyticsIcon,
 } from '@mui/icons-material';
 import { useDispatch } from 'react-redux';
 import { logout } from '@/store/slices/authSlice';
@@ -35,126 +26,111 @@ interface SidebarProps {
 }
 
 const SuperAdminSidebar: React.FC<SidebarProps> = ({
-    open,
-    collapsed,
-    onClose,
-    width,
-    collapsedWidth,
-    isMobile,
+    open, collapsed, onClose, width, collapsedWidth, isMobile,
 }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useDispatch();
     const [logoutApi] = useLogoutMutation();
-
     const currentWidth = collapsed ? collapsedWidth : width;
 
-    const handleNavigate = (path: string) => {
-        navigate(path);
-        if (isMobile) {
-            onClose();
-        }
-    };
+    const go = (path: string) => { navigate(path); isMobile && onClose(); };
 
     const handleLogout = async () => {
-        try {
-            await logoutApi().unwrap();
-        } catch (error) {
-            console.error('Logout failed', error);
-        } finally {
-            dispatch(logout());
-            navigate('/login');
-        }
+        try { await logoutApi().unwrap(); } catch { /* silent */ }
+        dispatch(logout());
+        navigate('/login');
     };
 
     const menuItems = [
-        { label: 'Overview', path: '/dashboard', icon: <DashboardIcon /> },
-        { label: 'Universities', path: '/tenants', icon: <TenantIcon /> },
-        { label: 'Global Stats', path: '/stats', icon: <AnalyticsIcon /> },
-        { label: 'Platform Settings', path: '/settings', icon: <SettingsIcon /> },
-        { label: 'System Logs', path: '/logs', icon: <SecurityIcon /> },
+        { label: 'Overview', path: '/dashboard', icon: <DashboardIcon />, color: '#4f46e5' },
+        { label: 'Universities', path: '/tenants', icon: <TenantIcon />, color: '#0ea5e9' },
+        { label: 'Analytics', path: '/stats', icon: <AnalyticsIcon />, color: '#10b981' },
+        { label: 'Settings', path: '/settings', icon: <SettingsIcon />, color: '#f59e0b' },
+        { label: 'Audit Logs', path: '/logs', icon: <SecurityIcon />, color: '#8b5cf6' },
     ];
 
-    const drawerContent = (
-        <Box
-            sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%',
-                bgcolor: '#1a1a1a', // Dark background for Super Admin
-                color: '#e0e0e0',
-            }}
-        >
-            {/* Logo */}
-            <Box
-                sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    px: 3,
-                    py: 3,
-                }}
-            >
-                <SuperAdminIcon sx={{ color: '#ff5252', fontSize: 32, mr: collapsed ? 0 : 2 }} />
+    const content = (
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#e2e8f0', p: 2, gap: 2 }}>
+
+            {/* ── Brand 3D Card ─────────────────────────────────────────────────── */}
+            <Box sx={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                p: collapsed ? 1.5 : 2.5, gap: 2,
+                bgcolor: '#f8fafc',
+                borderRadius: '20px',
+                boxShadow: '10px 10px 20px #c1c8d1, -10px -10px 20px #ffffff, inset 0 2px 0 rgba(255,255,255,0.8)',
+            }}>
+                <Avatar sx={{
+                    borderRadius: '14px',
+                    width: 48, height: 48,
+                    background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)',
+                    boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.4), inset 0 2px 2px rgba(255,255,255,0.3)',
+                    border: '2px solid #ffffff'
+                }}>
+                    <Typography fontWeight={900} fontSize={22} color="white">E</Typography>
+                </Avatar>
                 {!collapsed && (
                     <Box>
-                        <Typography variant="h6" fontWeight="bold" sx={{ color: '#fff' }}>
-                            SUPER ADMIN
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>
+                            EduSphere
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#ff5252' }}>
-                            Control Panel
+                        <Typography variant="caption" sx={{ color: '#4f46e5', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
+                            Super Admin
                         </Typography>
                     </Box>
                 )}
             </Box>
 
-            <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
-
-            {/* Navigation */}
-            <Box sx={{ flex: 1, py: 2 }}>
-                <List>
+            {/* ── Nav ───────────────────────────────────────────────────── */}
+            <Box sx={{ flex: 1, mt: 1 }}>
+                <List disablePadding>
                     {menuItems.map((item) => {
-                        const isActive = location.pathname === item.path;
+                        const active = location.pathname === item.path ||
+                            (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+
                         return (
-                            <ListItem key={item.path} disablePadding sx={{ mb: 1 }}>
+                            <ListItem key={item.path} disablePadding sx={{ mb: 2 }}>
                                 <Tooltip title={collapsed ? item.label : ''} placement="right" arrow>
                                     <ListItemButton
-                                        onClick={() => handleNavigate(item.path)}
-                                        selected={isActive}
+                                        onClick={() => go(item.path)}
+                                        selected={active}
                                         sx={{
-                                            minHeight: 48,
+                                            minHeight: 56,
                                             justifyContent: collapsed ? 'center' : 'flex-start',
-                                            px: 2.5,
-                                            mx: 1,
-                                            borderRadius: 1,
+                                            px: 2, borderRadius: '16px',
+                                            bgcolor: active ? '#f8fafc' : 'transparent',
+                                            boxShadow: active ? 'inset 5px 5px 10px #e2e8f0, inset -5px -5px 10px #ffffff' : 'none',
+                                            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                             '&.Mui-selected': {
-                                                bgcolor: 'rgba(255, 82, 82, 0.15)',
-                                                '&:hover': {
-                                                    bgcolor: 'rgba(255, 82, 82, 0.25)',
-                                                },
+                                                bgcolor: '#f8fafc',
+                                                '&:hover': { bgcolor: '#f8fafc' },
                                             },
                                             '&:hover': {
-                                                bgcolor: 'rgba(255, 255, 255, 0.05)',
+                                                bgcolor: '#f1f5f9',
+                                                boxShadow: !active ? '5px 5px 10px #c1c8d1, -5px -5px 10px #ffffff' : 'inset 5px 5px 10px #e2e8f0, inset -5px -5px 10px #ffffff',
+                                                transform: !active ? 'translateY(-2px)' : 'none'
                                             },
                                         }}
                                     >
-                                        <ListItemIcon
-                                            sx={{
-                                                minWidth: 0,
-                                                mr: collapsed ? 0 : 2,
-                                                justifyContent: 'center',
-                                                color: isActive ? '#ff5252' : '#9e9e9e',
-                                            }}
-                                        >
+                                        <ListItemIcon sx={{
+                                            minWidth: 0, mr: collapsed ? 0 : 2.5,
+                                            justifyContent: 'center',
+                                            color: active ? item.color : '#64748b',
+                                            transition: 'transform 0.2s',
+                                            transform: active ? 'scale(1.2)' : 'scale(1)',
+                                            filter: active ? `drop-shadow(0 4px 6px ${item.color}40)` : 'none',
+                                        }}>
                                             {item.icon}
                                         </ListItemIcon>
                                         {!collapsed && (
                                             <ListItemText
                                                 primary={item.label}
                                                 primaryTypographyProps={{
-                                                    fontSize: '0.9rem',
-                                                    fontWeight: isActive ? 600 : 400,
-                                                    color: isActive ? '#fff' : '#b0b0b0',
+                                                    fontSize: '1rem',
+                                                    fontWeight: active ? 800 : 700,
+                                                    color: active ? '#0f172a' : '#475569',
                                                 }}
                                             />
                                         )}
@@ -166,21 +142,32 @@ const SuperAdminSidebar: React.FC<SidebarProps> = ({
                 </List>
             </Box>
 
-            {/* User Profile / Logout */}
-            <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            {/* ── Logout 3D Button ────────────────────────────────────────────────── */}
+            <Box>
                 <ListItemButton
                     onClick={handleLogout}
                     sx={{
-                        borderRadius: 1,
+                        borderRadius: '16px', minHeight: 56,
                         justifyContent: collapsed ? 'center' : 'flex-start',
-                        color: '#ef5350',
-                        '&:hover': { bgcolor: 'rgba(239, 83, 80, 0.1)' }
+                        color: '#ef4444',
+                        px: 2,
+                        bgcolor: '#f8fafc',
+                        boxShadow: '8px 8px 16px #c1c8d1, -8px -8px 16px #ffffff',
+                        border: '1px solid #ffffff',
+                        '&:hover': {
+                            boxShadow: 'inset 5px 5px 10px #e2e8f0, inset -5px -5px 10px #ffffff',
+                        },
                     }}
                 >
-                    <ListItemIcon sx={{ minWidth: 0, mr: collapsed ? 0 : 2, color: 'inherit' }}>
+                    <ListItemIcon sx={{ minWidth: 0, mr: collapsed ? 0 : 2.5, color: '#ef4444' }}>
                         <LogoutIcon />
                     </ListItemIcon>
-                    {!collapsed && <ListItemText primary="Logout" />}
+                    {!collapsed && (
+                        <ListItemText
+                            primary="Secure Sign Out"
+                            primaryTypographyProps={{ fontSize: '1rem', fontWeight: 800, color: '#ef4444' }}
+                        />
+                    )}
                 </ListItemButton>
             </Box>
         </Box>
@@ -189,13 +176,11 @@ const SuperAdminSidebar: React.FC<SidebarProps> = ({
     if (isMobile) {
         return (
             <Drawer
-                anchor="left"
-                open={open}
-                onClose={onClose}
+                anchor="left" open={open} onClose={onClose}
                 ModalProps={{ keepMounted: true }}
-                sx={{ '& .MuiDrawer-paper': { width: width, boxSizing: 'border-box', bgcolor: '#1a1a1a' } }}
+                sx={{ '& .MuiDrawer-paper': { width, boxSizing: 'border-box', bgcolor: '#e2e8f0', border: 'none' } }}
             >
-                {drawerContent}
+                {content}
             </Drawer>
         );
     }
@@ -204,22 +189,18 @@ const SuperAdminSidebar: React.FC<SidebarProps> = ({
         <Drawer
             variant="permanent"
             sx={{
-                width: currentWidth,
-                flexShrink: 0,
+                width: currentWidth, flexShrink: 0,
                 '& .MuiDrawer-paper': {
-                    width: currentWidth,
-                    boxSizing: 'border-box',
-                    bgcolor: '#1a1a1a',
-                    borderRight: '1px solid rgba(255,255,255,0.1)',
-                    transition: (theme) =>
-                        theme.transitions.create('width', {
-                            easing: theme.transitions.easing.sharp,
-                            duration: theme.transitions.duration.enteringScreen,
-                        }),
+                    width: currentWidth, boxSizing: 'border-box',
+                    bgcolor: '#e2e8f0', border: 'none',
+                    transition: (t) => t.transitions.create('width', {
+                        easing: t.transitions.easing.sharp,
+                        duration: t.transitions.duration.enteringScreen,
+                    }),
                 },
             }}
         >
-            {drawerContent}
+            {content}
         </Drawer>
     );
 };

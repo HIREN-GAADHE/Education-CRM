@@ -76,6 +76,7 @@ const LoginPage: React.FC = () => {
                         roleLevel: result.user.role_level ?? 99,
                         restrictedModules: result.user.restricted_modules ?? [],
                         allowedModules: result.user.allowed_modules ?? [],
+                        expiresIn: result.expires_in,  // ← store token lifetime for proactive refresh
                     })
                 );
 

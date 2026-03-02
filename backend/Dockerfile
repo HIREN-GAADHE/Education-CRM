@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Cache buster — bump this date to force a full Docker layer rebuild on Render
+ARG CACHE_BUST=2026-03-02
+
 # System deps — libpq for psycopg2 (used by alembic sync mode)
 RUN apt-get update && apt-get install -y \
     build-essential \

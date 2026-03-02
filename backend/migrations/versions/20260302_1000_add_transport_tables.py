@@ -35,10 +35,30 @@ def upgrade() -> None:
         name='triptype', create_type=False
     )
 
-    op.execute("CREATE TYPE IF NOT EXISTS vehicletype AS ENUM ('bus','van','car','mini_bus','auto')")
-    op.execute("CREATE TYPE IF NOT EXISTS vehiclestatus AS ENUM ('active','maintenance','inactive','retired')")
-    op.execute("CREATE TYPE IF NOT EXISTS routestatus AS ENUM ('active','inactive','suspended')")
-    op.execute("CREATE TYPE IF NOT EXISTS triptype AS ENUM ('pickup','drop','both')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE vehicletype AS ENUM ('bus','van','car','mini_bus','auto');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE vehiclestatus AS ENUM ('active','maintenance','inactive','retired');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE routestatus AS ENUM ('active','inactive','suspended');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE triptype AS ENUM ('pickup','drop','both');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # ── transport_vehicles ────────────────────────────────────────────────────
     op.execute("""

@@ -5,12 +5,12 @@ import {
     Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, MenuItem, CircularProgress, Alert, Table, TableBody,
     TableCell, TableContainer, TableHead, TableRow, IconButton,
-    Divider, Tooltip, alpha, useTheme, Autocomplete, InputAdornment,
+    Divider, Tooltip, alpha, Autocomplete,
 } from '@mui/material';
 import {
     AccountBalance, PlayArrow, Receipt, Settings, Add, Edit,
-    CheckCircle, HourglassEmpty, Block, Delete, ExpandMore,
-    TrendingUp, CurrencyRupee, People, Download, DoneAll,
+    CheckCircle, HourglassEmpty, Block, Delete,
+    TrendingUp, CurrencyRupee, People, DoneAll,
 } from '@mui/icons-material';
 import {
     useGetStructuresQuery, useCreateStructureMutation, useUpdateStructureMutation,
@@ -32,7 +32,6 @@ const STATUS_ICON: Record<string, any> = { pending: <HourglassEmpty fontSize="sm
 function fmt(n: number) { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n); }
 
 export default function Payroll() {
-    const theme = useTheme();
     const roleLevel = useSelector(selectRoleLevel);
     const isAdmin = roleLevel !== null && roleLevel <= 3;
     const isHR = roleLevel !== null && roleLevel <= 5;
@@ -430,7 +429,7 @@ function RunPayrollTab() {
 }
 
 // ─── Salary Structures Tab ─────────────────────────────────────────────────────
-function StructuresTab({ isAdmin }: { isAdmin: boolean }) {
+function StructuresTab({ isAdmin: _isAdmin }: { isAdmin: boolean }) {
     const { data: structures = [], isLoading } = useGetStructuresQuery({});
     const [createStruct, { isLoading: isCreating }] = useCreateStructureMutation();
     const [updateStruct] = useUpdateStructureMutation();

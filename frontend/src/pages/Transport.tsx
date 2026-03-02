@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
     Box, Typography, Paper, Grid, Button, Card, CardContent, CardActions,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, Chip, IconButton, Dialog, DialogTitle, DialogContent,
     DialogActions, TextField, MenuItem, Alert, CircularProgress,
-    List, ListItem, ListItemText, ListItemSecondaryAction,
-    ListItemIcon, Tooltip, alpha, useTheme, Collapse,
+    List, ListItem, ListItemText,
+    ListItemIcon, Tooltip, alpha, Collapse,
     InputAdornment, Autocomplete,
 } from '@mui/material';
 import {
@@ -72,7 +72,6 @@ const StatCard = ({ icon, value, label, color }: { icon: React.ReactNode; value:
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function TransportPage() {
-    const theme = useTheme();
     const [tab, setTab] = useState(0);
 
     const { data: vehiclesData, isLoading: vehiclesLoading } = useGetVehiclesQuery({ page: 1, pageSize: 50 });

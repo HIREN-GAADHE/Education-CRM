@@ -24,6 +24,7 @@ const C = {
     indigo: '#4f46e5',
     amber: '#d97706',
     emerald: '#059669',
+    rose: '#e11d48',
     textMain: '#0f172a',
     textMuted: '#475569',
 };

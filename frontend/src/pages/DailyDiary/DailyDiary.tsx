@@ -1,23 +1,21 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
     Box, Typography, Tabs, Tab, Grid, Card, CardContent, CardActions,
-    Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
-    TextField, MenuItem, CircularProgress, Alert, Paper, Divider,
-    alpha, useTheme, Autocomplete, LinearProgress, Tooltip,
+    Button, Chip, TextField, MenuItem, CircularProgress, Alert, Paper,
+    Autocomplete, Tooltip,
 } from '@mui/material';
 import {
-    MenuBook, Add, CheckCircle, Mood, MoodBad, SentimentNeutral,
-    SentimentVeryDissatisfied, SentimentVerySatisfied, Psychology,
-    ThumbUp, Check,
+    MenuBook, Add, ThumbUp,
 } from '@mui/icons-material';
 import {
     useGetDiaryEntriesQuery, useCreateDiaryEntryMutation,
-    useAcknowledgeDiaryEntryMutation, useGetMoodSummaryQuery,
+    useAcknowledgeDiaryEntryMutation,
     DiaryEntry, MoodType,
 } from '../../store/api/dailyDiaryApi';
 import { useGetAllStudentsQuery } from '../../store/api/studentApi';
 import { selectRoleLevel } from '../../store/slices/authSlice';
+
 import { toast } from 'react-toastify';
 
 const MOODS: { value: MoodType; label: string; emoji: string; color: string }[] = [
@@ -71,7 +69,7 @@ export default function DailyDiaryPage() {
 
 // ─── All Entries ───────────────────────────────────────────────────────────────
 function AllEntriesTab({ isTeacher }: { isTeacher: boolean }) {
-    const theme = useTheme();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [studentFilter, setStudentFilter] = useState<string | undefined>();
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
@@ -136,7 +134,7 @@ function AllEntriesTab({ isTeacher }: { isTeacher: boolean }) {
 function DiaryCard({ entry, isTeacher, onAcknowledge }: {
     entry: DiaryEntry; isTeacher: boolean; onAcknowledge: (id: string) => void;
 }) {
-    const theme = useTheme();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const mood = entry.mood ? MOOD_MAP[entry.mood] : null;
 
     return (

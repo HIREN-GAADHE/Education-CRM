@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
     Box, Typography, Tabs, Tab, Grid, Card, CardContent, CardActions,
     Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, MenuItem, CircularProgress, Alert, Paper, Divider,
-    IconButton, Autocomplete, alpha, useTheme, Tooltip, List,
-    ListItem, ListItemText, ListItemSecondaryAction,
+    Autocomplete,
 } from '@mui/material';
 import {
     HealthAndSafety, Vaccines, LocalHospital, Edit, Add, Delete,
@@ -27,10 +26,8 @@ const STATUS_COLORS: Record<string, any> = {
 };
 
 export default function HealthRecords() {
-    const theme = useTheme();
     const [tab, setTab] = useState(0);
     const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-    const [selectedStudentLabel, setSelectedStudentLabel] = useState('');
     const roleLevel = useSelector(selectRoleLevel);
     const canEdit = roleLevel !== null && roleLevel <= 6;
 
@@ -45,7 +42,7 @@ export default function HealthRecords() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
                 <Box sx={{
                     p: 1.5, borderRadius: 2,
-                    background: (t) => `linear-gradient(135deg, #e53e3e, #dd6b20)`,
+                    background: (_t) => `linear-gradient(135deg, #e53e3e, #dd6b20)`,
                 }}>
                     <HealthAndSafety sx={{ color: 'white', fontSize: 28 }} />
                 </Box>

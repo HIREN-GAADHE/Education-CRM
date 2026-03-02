@@ -82,9 +82,11 @@ else
 fi
 
 # ── 3. Start Uvicorn ────────────────────────────────────────────────────────
+# Convert LOG_LEVEL to lowercase — uvicorn only accepts 'info', not 'INFO'
+LOG_LEVEL_LOWER=$(echo "${LOG_LEVEL:-info}" | tr '[:upper:]' '[:lower:]')
 echo "[3/3] Starting Uvicorn server on 0.0.0.0:${PORT:-8000}..."
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
     --port "${PORT:-8000}" \
     --workers "${WORKERS:-1}" \
-    --log-level "${LOG_LEVEL:-info}"
+    --log-level "${LOG_LEVEL_LOWER}"

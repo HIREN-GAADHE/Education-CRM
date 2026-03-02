@@ -44,20 +44,20 @@ try:
         )).scalar()
 
         if not has_alembic and has_courses:
-            print("  Existing DB detected (no alembic tracking). Stamping to current migration head...")
+            print("  Existing DB detected (no alembic tracking). Stamping to payroll migration...")
             conn.execute(text(
                 "CREATE TABLE alembic_version ("
                 "    version_num VARCHAR(32) NOT NULL, "
                 "    CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
                 ")"
             ))
-            # Stamp to the latest migration we know is already applied
+            # NOTE: must be <= 32 chars to fit alembic_version.version_num VARCHAR(32)
             conn.execute(text(
-                "INSERT INTO alembic_version (version_num) VALUES ('20260302_1000_add_transport_tables')"
+                "INSERT INTO alembic_version (version_num) VALUES ('add_payroll_tables')"
             ))
             conn.commit()
-            print("  Stamped DB to: 20260302_1000_add_transport_tables (head)")
-            print("  Alembic will now only run any NEW migrations.")
+            print("  Stamped DB to: add_payroll_tables")
+            print("  Alembic will now run only NEW migrations (transport tables).")
         elif has_alembic:
             print("  DB already tracked by alembic. Proceeding with upgrade head.")
         else:

@@ -1,7 +1,7 @@
 """add_transport_tables
 
-Revision ID: 20260302_1000_add_transport_tables
-Revises: 20260222_1400_add_payroll_tables
+Revision ID: add_transport_tables
+Revises: add_payroll_tables
 Create Date: 2026-03-02 10:00:00.000000
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '20260302_1000_add_transport_tables'
+revision = 'add_transport_tables'
 down_revision = 'add_payroll_tables'
 branch_labels = None
 depends_on = None
